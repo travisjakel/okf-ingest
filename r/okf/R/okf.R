@@ -187,24 +187,102 @@ okf_validate <- function(rd) {
   do.call(rbind, rows)
 }
 
+.okf_source_kind <- function(source) {
+  s <- sub("[?#].*$", "", source)
+  if (grepl("\\.zip$", s, ignore.case = TRUE)) "zip"
+  else if (grepl("\\.(tar\\.gz|tgz|tar|tar\\.bz2)$", s, ignore.case = TRUE)) "tar"
+  else if (grepl("\\.git$", s) || grepl("^git@", source) ||
+           grepl("^https?://(www\\.)?(github|gitlab|bitbucket)\\.", s)) "git"
+  else stop("cannot determine source kind (expected a dir, git URL, or tar/zip): ", source)
+}
+
+# Resolve the bundle root inside an extracted/cloned tree: honor an explicit
+# subdir, else descend through single wrapper dirs (e.g. a GitHub tarball's
+# `repo-branch/`) until markdown files appear.
+.okf_bundle_root <- function(base, subdir = NULL) {
+  if (!is.null(subdir) && nzchar(subdir)) return(file.path(base, subdir))
+  cur <- base
+  for (i in 1:6) {
+    entries <- list.files(cur)                       # excludes hidden (skips .git)
+    has_md <- any(grepl("\\.md$", entries, ignore.case = TRUE))
+    dirs <- entries[dir.exists(file.path(cur, entries))]
+    if (!has_md && length(dirs) == 1) cur <- file.path(cur, dirs) else break
+  }
+  cur
+}
+
+#' Materialize an OKF bundle from a directory, git URL, or tar/zip archive.
+#'
+#' Local directories are used in place. Git URLs (github/gitlab/bitbucket, `.git`,
+#' or `git@`) are shallow-cloned. Tar/zip archives (local path or `http(s)` URL)
+#' are downloaded if remote and extracted. The caller MUST invoke the returned
+#' `cleanup()` when done to remove any temporary files.
+#'
+#' @param source A directory path, git URL, or tar/zip path/URL.
+#' @param subdir Optional bundle path within the cloned/extracted tree.
+#' @param branch Optional git branch or tag (git sources only).
+#' @return A list with `dir` (the resolved bundle directory), `source_kind`
+#'   (`"dir"`/`"git"`/`"tar"`/`"zip"`), and `cleanup` (a function).
+#' @export
+okf_fetch <- function(source, subdir = NULL, branch = NULL) {
+  if (dir.exists(source))
+    return(list(dir = normalizePath(source, winslash = "/"),
+                source_kind = "dir", cleanup = function() invisible()))
+  kind <- .okf_source_kind(source)
+  tmp  <- tempfile("okf_"); dir.create(tmp)
+  cleanup <- function() unlink(tmp, recursive = TRUE, force = TRUE)
+  base <- tryCatch({
+    if (kind == "git") {
+      args <- c("clone", "--depth", "1")
+      if (!is.null(branch)) args <- c(args, "--branch", branch)
+      args <- c(args, source, file.path(tmp, "repo"))
+      if (system2("git", args, stdout = FALSE, stderr = FALSE) != 0)
+        stop("git clone failed (is git installed?): ", source)
+      file.path(tmp, "repo")
+    } else {
+      local <- source
+      if (grepl("^https?://", source)) {
+        local <- file.path(tmp, basename(sub("[?#].*$", "", source)))
+        utils::download.file(source, local, mode = "wb", quiet = TRUE)
+      }
+      ex <- file.path(tmp, "x"); dir.create(ex)
+      if (kind == "zip") utils::unzip(local, exdir = ex) else utils::untar(local, exdir = ex)
+      ex
+    }
+  }, error = function(e) { cleanup(); stop(conditionMessage(e)) })
+  list(dir = .okf_bundle_root(base, subdir), source_kind = kind, cleanup = cleanup)
+}
+
 #' Ingest an OKF bundle into a DuckDB catalog.
 #'
 #' Reads, validates, and loads the bundle into the `okf_bundle`, `okf_concept`,
 #' `okf_link`, and `okf_validation` tables of a (file or in-memory) DuckDB
 #' database.
 #'
-#' @param root A bundle directory path, or a bundle list from [okf_read()].
+#' @param root A bundle directory path, a git URL, a tar/zip path or URL, or a
+#'   bundle list from [okf_read()]. Non-directory sources are fetched via
+#'   [okf_fetch()] and cleaned up afterwards.
 #' @param db_path DuckDB path; defaults to in-memory `":memory:"`.
 #' @param ingested_at Optional ISO-8601 timestamp; defaults to the current time.
 #' @param bundle_id Optional stable bundle id.
-#' @param source_kind How the bundle was obtained (e.g. `"dir"`).
+#' @param source_kind How the bundle was obtained (e.g. `"dir"`); auto-set for
+#'   fetched sources.
+#' @param subdir Optional bundle path within a cloned/extracted source.
+#' @param branch Optional git branch or tag (git sources only).
 #' @return A list with the open `con`, the `bundle_id`, and a `summary`
 #'   (counts, conformance, link totals). The caller owns/closes `con`.
 #' @export
 okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
-                       bundle_id = NULL, source_kind = "dir") {
-  rd  <- if (is.list(root) && !is.null(root$concepts)) root
-         else okf_read(root, bundle_id = bundle_id, source_kind = source_kind)
+                       bundle_id = NULL, source_kind = "dir",
+                       subdir = NULL, branch = NULL) {
+  if (is.character(root) && length(root) == 1L && !dir.exists(root)) {
+    f <- okf_fetch(root, subdir = subdir, branch = branch)
+    on.exit(f$cleanup(), add = TRUE)
+    rd <- okf_read(f$dir, bundle_id = bundle_id, source_kind = f$source_kind)
+  } else {
+    rd <- if (is.list(root) && !is.null(root$concepts)) root
+          else okf_read(root, bundle_id = bundle_id, source_kind = source_kind)
+  }
   val <- okf_validate(rd)
   lk  <- okf_links(rd)
   if (is.null(ingested_at)) ingested_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")

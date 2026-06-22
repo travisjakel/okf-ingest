@@ -3,7 +3,7 @@
 # okf — command-line interface (R). Mirrors py/okf/cli.py.
 #
 #   okf validate <bundle> [--strict] [--json]
-#   okf ingest   <bundle> --db <path> [--id <bundle_id>] [--json]
+#   okf ingest   <bundle|git-url|tar/zip> --db <path> [--id <id>] [--subdir <p>] [--branch <b>] [--json]
 #   okf query    <db> [--sql "SELECT ..."] [--search <term>]
 #                     [--concepts] [--links] [--findings] [--json]
 #   okf embed    <db> [--model nomic-embed-text] [--json]
@@ -37,7 +37,7 @@ emit <- function(x) if (out_json) cat(jsonlite::toJSON(x, auto_unbox = TRUE, pre
 usage <- function(code = 2) {
   cat("usage:\n",
       "  okf validate <bundle> [--strict] [--json]\n",
-      "  okf ingest   <bundle> --db <path> [--id <bundle_id>] [--json]\n",
+      "  okf ingest   <bundle|git-url|tar/zip> --db <path> [--subdir <p>] [--branch <b>] [--json]\n",
       "  okf query    <db> [--sql \"...\"] [--search <term>] [--concepts] [--links] [--findings] [--json]\n",
       sep = "")
   quit(status = code)
@@ -66,7 +66,8 @@ if (cmd == "validate") {
 } else if (cmd == "ingest") {
   if (is.na(pos)) usage()
   db <- optval("--db", ":memory:")
-  res <- okf_ingest(pos, db_path = db, bundle_id = optval("--id"))
+  res <- okf_ingest(pos, db_path = db, bundle_id = optval("--id"),
+                    subdir = optval("--subdir"), branch = optval("--branch"))
   DBI::dbDisconnect(res$con, shutdown = TRUE)
   if (out_json) emit(c(list(bundle = pos, db = db, bundle_id = res$bundle_id), res$summary))
   else {

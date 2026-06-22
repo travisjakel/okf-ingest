@@ -35,6 +35,7 @@ def main(argv=None):
 
     i = sub.add_parser("ingest"); i.add_argument("bundle")
     i.add_argument("--db", default=":memory:"); i.add_argument("--id", default=None)
+    i.add_argument("--subdir", default=None); i.add_argument("--branch", default=None)
     i.add_argument("--json", action="store_true")
 
     q = sub.add_parser("query"); q.add_argument("db")
@@ -69,7 +70,8 @@ def main(argv=None):
         return 1 if (not conf or (a.strict and nwarn > 0)) else 0
 
     if a.cmd == "ingest":
-        con, s = okf.ingest(a.bundle, db_path=a.db, bundle_id=a.id)
+        con, s = okf.ingest(a.bundle, db_path=a.db, bundle_id=a.id,
+                            subdir=a.subdir, branch=a.branch)
         con.close()
         if a.json:
             print(json.dumps({"bundle": a.bundle, "db": a.db, **s}, indent=2))

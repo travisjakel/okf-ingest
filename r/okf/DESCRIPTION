@@ -16,7 +16,8 @@ Imports:
     DBI,
     duckdb,
     digest,
-    jsonlite
+    jsonlite,
+    utils
 Suggests:
     httr2
 RoxygenNote: 7.3.2

@@ -9,11 +9,15 @@ okf_ingest(
   db_path = ":memory:",
   ingested_at = NULL,
   bundle_id = NULL,
-  source_kind = "dir"
+  source_kind = "dir",
+  subdir = NULL,
+  branch = NULL
 )
 }
 \arguments{
-\item{root}{A bundle directory path, or a bundle list from [okf_read()].}
+\item{root}{A bundle directory path, a git URL, a tar/zip path or URL, or a
+bundle list from [okf_read()]. Non-directory sources are fetched via
+[okf_fetch()] and cleaned up afterwards.}
 
 \item{db_path}{DuckDB path; defaults to in-memory `":memory:"`.}
 
@@ -21,7 +25,12 @@ okf_ingest(
 
 \item{bundle_id}{Optional stable bundle id.}
 
-\item{source_kind}{How the bundle was obtained (e.g. `"dir"`).}
+\item{source_kind}{How the bundle was obtained (e.g. `"dir"`); auto-set for
+fetched sources.}
+
+\item{subdir}{Optional bundle path within a cloned/extracted source.}
+
+\item{branch}{Optional git branch or tag (git sources only).}
 }
 \value{
 A list with the open `con`, the `bundle_id`, and a `summary`

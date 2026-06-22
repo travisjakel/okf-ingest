@@ -13,7 +13,7 @@ Public API:
     search(con, term)            -> rows
 """
 from __future__ import annotations
-import os, re, json, hashlib, datetime
+import os, re, json, hashlib, datetime, tempfile, shutil, subprocess, tarfile, zipfile, urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Optional
 import yaml
@@ -216,9 +216,94 @@ def validate(b: Bundle) -> list:
     return out
 
 
+def _source_kind(source: str) -> str:
+    s = re.sub(r"[?#].*$", "", source)
+    if re.search(r"\.zip$", s, re.I):
+        return "zip"
+    if re.search(r"\.(tar\.gz|tgz|tar|tar\.bz2)$", s, re.I):
+        return "tar"
+    if s.endswith(".git") or source.startswith("git@") or \
+       re.match(r"^https?://(www\.)?(github|gitlab|bitbucket)\.", s):
+        return "git"
+    raise ValueError(f"cannot determine source kind (expected a dir, git URL, or tar/zip): {source}")
+
+
+def _bundle_root(base: str, subdir: Optional[str]) -> str:
+    if subdir:
+        return os.path.join(base, subdir)
+    cur = base
+    for _ in range(6):
+        entries = [e for e in os.listdir(cur) if not e.startswith(".")]
+        has_md = any(e.lower().endswith(".md") for e in entries)
+        dirs = [e for e in entries if os.path.isdir(os.path.join(cur, e))]
+        if not has_md and len(dirs) == 1:
+            cur = os.path.join(cur, dirs[0])
+        else:
+            break
+    return cur
+
+
+def fetch(source: str, subdir: Optional[str] = None, branch: Optional[str] = None):
+    """Materialize a bundle from a dir, git URL, or tar/zip (local or remote).
+    Returns (dir, source_kind, cleanup); the caller must call cleanup()."""
+    if os.path.isdir(source):
+        return os.path.realpath(source), "dir", (lambda: None)
+    kind = _source_kind(source)
+    tmp = tempfile.mkdtemp(prefix="okf_")
+
+    def cleanup():
+        shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        if kind == "git":
+            args = ["git", "clone", "--depth", "1"]
+            if branch:
+                args += ["--branch", branch]
+            args += [source, os.path.join(tmp, "repo")]
+            if subprocess.run(args, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode != 0:
+                raise RuntimeError(f"git clone failed (is git installed?): {source}")
+            base = os.path.join(tmp, "repo")
+        else:
+            local = source
+            if re.match(r"^https?://", source):
+                local = os.path.join(tmp, os.path.basename(re.sub(r"[?#].*$", "", source)))
+                urllib.request.urlretrieve(source, local)
+            ex = os.path.join(tmp, "x"); os.makedirs(ex)
+            if kind == "zip":
+                with zipfile.ZipFile(local) as z:
+                    z.extractall(ex)
+            else:
+                with tarfile.open(local) as t:
+                    try:
+                        t.extractall(ex, filter="data")   # py>=3.12 safe extraction
+                    except TypeError:
+                        t.extractall(ex)
+            base = ex
+    except Exception:
+        cleanup()
+        raise
+    return _bundle_root(base, subdir), kind, cleanup
+
+
 def ingest(root, db_path: str = ":memory:", ingested_at: Optional[str] = None,
-           bundle_id: Optional[str] = None, source_kind: str = "dir"):
-    b = root if isinstance(root, Bundle) else read_bundle(root, bundle_id, source_kind)
+           bundle_id: Optional[str] = None, source_kind: str = "dir",
+           subdir: Optional[str] = None, branch: Optional[str] = None):
+    cleanup = None
+    try:
+        if isinstance(root, Bundle):
+            b = root
+        elif isinstance(root, str) and not os.path.isdir(root):
+            d, kind, cleanup = fetch(root, subdir=subdir, branch=branch)
+            b = read_bundle(d, bundle_id, kind)
+        else:
+            b = read_bundle(root, bundle_id, source_kind)
+        return _ingest_bundle(b, db_path, ingested_at)
+    finally:
+        if cleanup:
+            cleanup()
+
+
+def _ingest_bundle(b, db_path, ingested_at):
     val = validate(b)
     lk = links(b)
     if ingested_at is None:

@@ -11,4 +11,5 @@
 #' @importFrom jsonlite toJSON
 #' @importFrom DBI dbConnect dbDisconnect dbExecute dbGetQuery dbAppendTable
 #' @importFrom duckdb duckdb
+#' @importFrom utils download.file unzip untar
 "_PACKAGE"

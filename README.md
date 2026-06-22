@@ -100,10 +100,20 @@ package, or falls back to dev source):
 
 ```bash
 okf validate <bundle> [--strict] [--json]      # lint; exit 1 on errors (or warnings w/ --strict)
-okf ingest   <bundle> --db catalog.duckdb [--json]
+okf ingest   <source> --db catalog.duckdb [--subdir <p>] [--branch <b>] [--json]
 okf query    catalog.duckdb [--sql "…"] [--search <term>] [--concepts|--links|--findings] [--json]
 okf embed    catalog.duckdb [--model nomic-embed-text]      # chunk + embed bodies for semantic search
 okf rag      catalog.duckdb --query "…" [-k 5] [--model …]  # top-k semantic matches
+```
+
+A `<source>` is a local directory, a **git URL** (github/gitlab/bitbucket, `.git`,
+or `git@`), or a **tar/zip archive** (local path or `http(s)` URL). Remote sources
+are fetched to a temp dir and cleaned up automatically; `--subdir` selects a
+bundle within a repo/archive and `--branch` picks a git ref:
+
+```bash
+okf ingest https://github.com/org/repo.git --subdir docs/okf --db kb.duckdb
+okf ingest https://example.com/bundle.tar.gz --db kb.duckdb
 ```
 
 `validate` is CI-friendly (non-zero exit = non-conformant). The catalog is
