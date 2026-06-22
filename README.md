@@ -1,7 +1,7 @@
 # okf-ingest
 
 [![CI](https://github.com/travisjakel/okf-ingest/actions/workflows/ci.yml/badge.svg)](https://github.com/travisjakel/okf-ingest/actions/workflows/ci.yml)
-[![r-universe](https://travisjakel.r-universe.dev/badges/okf)](https://travisjakel.r-universe.dev/okf)
+[![r-universe](https://travisjakel.r-universe.dev/okf/badges/version)](https://travisjakel.r-universe.dev/okf)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 A unified, open-source **ingestion tool for [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) bundles** — read any OKF bundle, validate its conformance (permissively, per the spec), build the concept graph, and load it into a portable, queryable **DuckDB catalog**. One catalog format, two idiomatic bindings: **R** and **Python**.
@@ -51,9 +51,10 @@ Per OKF §6, a bundle is **conformant** iff every non-reserved `.md` has parseab
 # Python — installs the `okf` command + importable package
 pip install ./py            # (or: pip install okf-ingest once published)
 
-# R — from R-universe (no compilation; pulls deps automatically)
-install.packages("okf", repos = c("https://travisjakel.r-universe.dev",
-                                  "https://cloud.r-project.org"))
+# R — from R-universe (binaries; pulls deps automatically)
+options(repos = c(travisjakel = "https://travisjakel.r-universe.dev",
+                  CRAN = "https://cloud.r-project.org"))
+install.packages("okf")
 # …or from a clone:
 R CMD INSTALL r/okf         # (or: remotes::install_local("r/okf"))
 ```
