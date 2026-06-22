@@ -1,5 +1,9 @@
 # okf-ingest
 
+[![CI](https://github.com/travisjakel/okf-ingest/actions/workflows/ci.yml/badge.svg)](https://github.com/travisjakel/okf-ingest/actions/workflows/ci.yml)
+[![r-universe](https://travisjakel.r-universe.dev/badges/okf)](https://travisjakel.r-universe.dev/okf)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 A unified, open-source **ingestion tool for [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) bundles** — read any OKF bundle, validate its conformance (permissively, per the spec), build the concept graph, and load it into a portable, queryable **DuckDB catalog**. One catalog format, two idiomatic bindings: **R** and **Python**.
 
 OKF (Google Cloud, v0.1) is a directory of markdown files with YAML frontmatter — one concept per file, markdown links as a graph. Validators and parsers already exist (Node, a web tool, a pure-Rust crate). **What no other tool does — and what this one is for — is load a bundle into a SQL-queryable DuckDB catalog with built-in semantic search (RAG), and do it from R or Python** (there was no R or Python OKF tooling at all). See [Related tools](#related-tools).
