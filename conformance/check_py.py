@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Conformance check: Python binding vs conformance/expected/*.json.
 Run: python conformance/check_py.py  (exit 0 = pass)."""
-import os, sys, json
+import os, sys, json, shutil, tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "py"))
 import okf.okf as okf
 
@@ -23,7 +23,23 @@ check("store.conformant", s["conformant"], exp["conformant"])
 check("store.errors", s["errors"], 0)
 check("store.links_total", s["links_total"], 8)
 check("store.links_broken", s["links_broken"], 1)
+
+# cross-language content-hash parity lock
+exp_h = json.load(open(os.path.join(HERE, "expected", "store.json")))["content_hashes"]
+got_h = con.execute(
+    "SELECT content_hash FROM okf_concept WHERE path='customers.md'").fetchone()[0]
+check("store.content_hash[customers.md]", got_h, exp_h["customers.md"])
 con.close()
+
+# --- fetch path: ingest the same bundle from a tar archive (offline) ---
+_tmp = tempfile.mkdtemp()
+_tar = shutil.make_archive(os.path.join(_tmp, "store"), "gztar",
+                           os.path.join(HERE, "bundles"), "store")
+con3, s3 = okf.ingest(_tar)
+check("fetch.tar.n_concepts", s3["n_concepts"], 3)
+check("fetch.tar.conformant", s3["conformant"], True)
+con3.close()
+shutil.rmtree(_tmp, ignore_errors=True)
 
 # --- negative ---
 con2, s2 = okf.ingest(os.path.join(HERE, "bundles", "negative"))

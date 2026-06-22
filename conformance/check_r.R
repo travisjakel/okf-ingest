@@ -23,7 +23,25 @@ chk("store.conformant",  r$summary$conformant,  ex$conformant)
 chk("store.errors",      r$summary$errors,      0L)
 chk("store.links_total", r$summary$links_total, 8L)
 chk("store.links_broken",r$summary$links_broken,1L)
+# cross-language content-hash parity lock
+exh <- jsonlite::fromJSON(file.path(here, "expected", "store.json"))$content_hashes
+goth <- DBI::dbGetQuery(r$con, "SELECT content_hash FROM okf_concept WHERE path='customers.md'")$content_hash
+chk("store.content_hash[customers.md]", goth, exh$`customers.md`)
 DBI::dbDisconnect(r$con, shutdown = TRUE)
+
+# fetch path: ingest the same bundle from a tar archive (offline).
+# Build the archive with "store/" at its root by taring from inside bundles/.
+tmpd <- tempfile("okfa"); dir.create(tmpd)
+tarp <- normalizePath(file.path(tmpd, "store.tar.gz"), winslash = "/", mustWork = FALSE)
+.old <- getwd(); setwd(file.path(here, "bundles"))
+utils::tar(tarp, files = "store", compression = "gzip")
+setwd(.old)
+r3 <- tryCatch(okf_ingest(tarp), error = function(e) {
+  cat("fetch.tar ERROR:", conditionMessage(e), "\n")
+  list(summary = list(n_concepts = -1L, conformant = NA)) })
+chk("fetch.tar.n_concepts", r3$summary$n_concepts, 3L)
+chk("fetch.tar.conformant", r3$summary$conformant, TRUE)
+if (!is.null(r3$con)) DBI::dbDisconnect(r3$con, shutdown = TRUE)
 
 # negative
 r2  <- okf_ingest(file.path(here, "bundles", "negative"))

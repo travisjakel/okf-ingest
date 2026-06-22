@@ -246,6 +246,13 @@ okf_fetch <- function(source, subdir = NULL, branch = NULL) {
         utils::download.file(source, local, mode = "wb", quiet = TRUE)
       }
       ex <- file.path(tmp, "x"); dir.create(ex)
+      # Reject path-traversal members (.. component or absolute path) before
+      # extracting anything, since R's unzip/untar don't guarantee sanitization.
+      members <- if (kind == "zip") utils::unzip(local, list = TRUE)$Name
+                 else utils::untar(local, list = TRUE)
+      if (any(grepl("(^|/)\\.\\.(/|$)", members) |
+              grepl("^(/|\\\\|[A-Za-z]:)", members)))
+        stop("archive contains unsafe paths (path traversal)")
       if (kind == "zip") utils::unzip(local, exdir = ex) else utils::untar(local, exdir = ex)
       ex
     }

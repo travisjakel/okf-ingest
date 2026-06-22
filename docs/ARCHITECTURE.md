@@ -38,11 +38,16 @@ bundle dir ─▶ read ─▶ parse frontmatter (YAML)         ─┐
   strings. The Python loader (`_OKFLoader`) drops the timestamp implicit
   resolver so both keep the authored string verbatim (and frontmatter stays
   JSON-serializable).
-- **Content hash**: `sha1` of the raw body bytes in both — R uses
-  `digest(..., serialize = FALSE)` to avoid hashing R's object serialization.
-- **`frontmatter` JSON** is semantically equal but not byte-identical across
+- **Content hash**: `sha1` of the body in both — R uses
+  `digest(..., serialize = FALSE)`; Python uses `hashlib.sha1`. The body is
+  normalized identically (Python's `splitlines()` matches R's `readLines()`:
+  both strip the trailing newline and CR in CRLF), so `content_hash` matches
+  across bindings. A conformance test (`content_hashes` in `expected/store.json`)
+  locks this so it cannot regress.
+- **`frontmatter` JSON** is semantically equal but **not** byte-identical across
   languages (key ordering/spacing differ); conformance asserts on parsed
-  structure, not raw JSON bytes.
+  structure, not raw JSON bytes. So catalogs match on every column except the
+  raw `frontmatter` text.
 - **`n_concepts`** counts non-reserved concept documents; `index.md`/`log.md`
   are catalogued (`reserved = true`) but not counted as concepts (OKF: "all
   other `.md` files are concept documents").

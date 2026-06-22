@@ -46,7 +46,7 @@ CLI. Ingest/embed in one language, query from the other.
 
 The interoperability **core is a contract, not compiled code**:
 
-1. **`schema/catalog.sql`** — the DuckDB catalog schema. Both bindings write byte-identical catalogs; you can query them with the bare `duckdb` CLI, no library at all.
+1. **`schema/catalog.sql`** — the DuckDB catalog schema. Both bindings write matching catalogs (same rows, types, links, validation, and `content_hash` — a parity-locked conformance test enforces this); the `frontmatter` JSON column is semantically equal but not byte-for-byte identical across languages. You can query the catalog with the bare `duckdb` CLI, no library at all.
 2. **`conformance/`** — language-agnostic golden bundles + expected outputs that every binding must reproduce.
 
 The **bindings** (`r/okf`, `py/okf`) are thin, native, ~300-line packages kept in lockstep by that shared corpus. This matches OKF's own ethos ("no required tooling — if you can `cat` a file you can read OKF") far better than a heavyweight FFI core would.
@@ -169,14 +169,17 @@ R and Python:
 |------|------|:--:|:--:|:--:|:--:|
 | `GoogleCloudPlatform/knowledge-catalog` | Py/TS | — | producer + HTML viz | — | — |
 | `W4G1/okf` | Rust | ✓ | ✓ | — | — |
+| `sniperunder123/okf-knowledge` | Python (Claude Code skill) | ✓ | ✓ + **authoring & graph viz** | — | — |
 | WitsCode / okf.site | Node/web | ✓ | partial | — | — |
 | okf-skills / okf-skill | agent skills | ✓ | ✓ | — | — |
 | **okf-ingest** (this) | **R + Python** | ✓ | ✓ | **DuckDB catalog** | **✓** |
 
-If you only need to lint a bundle, the Rust/Node validators are great. Reach for
-okf-ingest when you want an ingested bundle to become a **SQL-queryable,
-semantically-searchable index** — especially from a data/analytics (DuckDB) or R
-workflow.
+okf-ingest sits on the **consume** side of the OKF lifecycle. For the **produce**
+side — authoring, maintaining, and visualizing bundles (especially inside Claude
+Code) — [`okf-knowledge`](https://github.com/sniperunder123/okf-knowledge) is a
+nice complement: curate a bundle there, then `okf ingest` it into a queryable
+DuckDB + RAG catalog here. If you only need to lint a bundle, the Rust/Node
+validators are great.
 
 ## License
 

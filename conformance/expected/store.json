@@ -22,5 +22,9 @@
   "validation": {
     "errors": 0,
     "warn_rules_present": ["broken_link"]
+  },
+  "content_hashes": {
+    "_note": "sha1 of the concept body; MUST match across R and Python bindings (cross-language parity lock)",
+    "customers.md": "f44594dc1745c9ee6e4de29c03d3cb193d5ebefa"
   }
 }

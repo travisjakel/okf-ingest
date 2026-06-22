@@ -92,7 +92,10 @@ def _s(x):
 
 def parse_file(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as fh:
-        raw = fh.read().split("\n")
+        # splitlines() (not split("\n")) matches R's readLines(): it strips the
+        # EOL — including a trailing newline and CR in CRLF — so the body and
+        # its content_hash are identical across the two bindings.
+        raw = fh.read().splitlines()
     txt = "\n".join(raw)
     i = 0
     while i < len(raw) and raw[i].strip() == "":
@@ -228,6 +231,16 @@ def _source_kind(source: str) -> str:
     raise ValueError(f"cannot determine source kind (expected a dir, git URL, or tar/zip): {source}")
 
 
+def _assert_safe_members(base: str, names) -> None:
+    """Reject archive members that would extract outside `base` (path traversal
+    / zip-slip), before extracting anything."""
+    base_r = os.path.realpath(base)
+    for n in names:
+        target = os.path.realpath(os.path.join(base, n))
+        if target != base_r and not target.startswith(base_r + os.sep):
+            raise RuntimeError(f"archive member escapes target dir (path traversal): {n!r}")
+
+
 def _bundle_root(base: str, subdir: Optional[str]) -> str:
     if subdir:
         return os.path.join(base, subdir)
@@ -271,12 +284,14 @@ def fetch(source: str, subdir: Optional[str] = None, branch: Optional[str] = Non
             ex = os.path.join(tmp, "x"); os.makedirs(ex)
             if kind == "zip":
                 with zipfile.ZipFile(local) as z:
+                    _assert_safe_members(ex, z.namelist())
                     z.extractall(ex)
             else:
                 with tarfile.open(local) as t:
                     try:
-                        t.extractall(ex, filter="data")   # py>=3.12 safe extraction
-                    except TypeError:
+                        t.extractall(ex, filter="data")   # py>=3.12 sanitizes
+                    except TypeError:                      # older Python: guard manually
+                        _assert_safe_members(ex, [m.name for m in t.getmembers()])
                         t.extractall(ex)
             base = ex
     except Exception:
