@@ -39,7 +39,13 @@ CREATE TABLE IF NOT EXISTS okf_chunk (bundle_id TEXT, path TEXT, chunk_id INTEGE
   text TEXT, embedding FLOAT[]);
 "
 
-# --- frontmatter parse ------------------------------------------------------
+#' Parse the YAML frontmatter and body of a single OKF concept file.
+#'
+#' @param path Path to a markdown file.
+#' @return A list with `meta` (parsed frontmatter, or `NULL`), `body`, and
+#'   `err` (`NA` on success, else `"no_frontmatter"`, `"unclosed_frontmatter"`,
+#'   or `"yaml_parse_error"`).
+#' @export
 okf_parse_file <- function(path) {
   raw <- readLines(path, warn = FALSE, encoding = "UTF-8")
   txt <- paste(raw, collapse = "\n")
@@ -57,7 +63,11 @@ okf_parse_file <- function(path) {
   list(meta = meta, body = body, err = NA_character_)
 }
 
-# --- markdown link extraction + resolution (OKF §4) -------------------------
+#' Extract markdown link targets from a concept body (OKF cross-links, sec. 4).
+#'
+#' @param body Concept body text.
+#' @return Character vector of raw link targets (as written).
+#' @export
 okf_extract_links <- function(body) {
   regs <- regmatches(body, gregexpr("\\]\\(\\s*([^)\\s]+)", body, perl = TRUE))[[1]]
   if (!length(regs)) return(character(0))
@@ -75,6 +85,13 @@ okf_extract_links <- function(body) {
   paste(out, collapse = "/")
 }
 
+#' Resolve a markdown link target to a bundle-relative concept path.
+#'
+#' @param raw Raw link target.
+#' @param src_rel Bundle-relative path of the linking concept.
+#' @param known Character vector of all known concept paths in the bundle.
+#' @return The resolved bundle-relative path, or `NA` if it does not resolve.
+#' @export
 okf_resolve_link <- function(raw, src_rel, known) {
   t <- sub("#.*$", "", raw)
   if (startsWith(t, "/")) cand <- sub("^/", "", t)
@@ -85,7 +102,14 @@ okf_resolve_link <- function(raw, src_rel, known) {
 
 .is_external <- function(raw) grepl("^[a-zA-Z][a-zA-Z0-9+.-]*:", sub("#.*$", "", raw))
 
-# --- read a bundle ----------------------------------------------------------
+#' Read an OKF bundle from a directory into an in-memory representation.
+#'
+#' @param root Path to the bundle directory.
+#' @param bundle_id Optional stable id; defaults to a hash of the root path.
+#' @param source_kind How the bundle was obtained (e.g. `"dir"`).
+#' @return A list with `bundle_id`, `root`, `okf_version`, `source_kind`,
+#'   `concepts` (parsed per-file records), and `known` (all concept paths).
+#' @export
 okf_read <- function(root, bundle_id = NULL, source_kind = "dir") {
   root  <- normalizePath(root, winslash = "/", mustWork = TRUE)
   files <- list.files(root, pattern = "\\.md$", recursive = TRUE, full.names = TRUE)
@@ -111,7 +135,11 @@ okf_read <- function(root, bundle_id = NULL, source_kind = "dir") {
        source_kind = source_kind, concepts = concepts, known = known)
 }
 
-# --- graph edges ------------------------------------------------------------
+#' Build the concept graph (resolved and broken links) for a bundle.
+#'
+#' @param rd A bundle as returned by [okf_read()].
+#' @return A data.frame with `src_path`, `dst_raw`, `dst_path`, `resolved`.
+#' @export
 okf_links <- function(rd) {
   rows <- list()
   for (c in rd$concepts) for (raw in c$links_raw) {
@@ -125,7 +153,15 @@ okf_links <- function(rd) {
   do.call(rbind, rows)
 }
 
-# --- conformance validation -------------------------------------------------
+#' Validate a bundle against the OKF v0.1 conformance rules (permissively).
+#'
+#' Hard rules (severity `error`): parseable frontmatter, non-empty `type`. Soft
+#' findings (severity `warn`): missing recommended fields, non-ISO timestamps,
+#' broken links. Never rejects the bundle — returns findings.
+#'
+#' @param rd A bundle as returned by [okf_read()].
+#' @return A data.frame with `path`, `severity`, `rule`, `message`.
+#' @export
 okf_validate <- function(rd) {
   rows <- list()
   add <- function(path, sev, rule, msg)
@@ -151,7 +187,20 @@ okf_validate <- function(rd) {
   do.call(rbind, rows)
 }
 
-# --- ingest to DuckDB catalog ----------------------------------------------
+#' Ingest an OKF bundle into a DuckDB catalog.
+#'
+#' Reads, validates, and loads the bundle into the `okf_bundle`, `okf_concept`,
+#' `okf_link`, and `okf_validation` tables of a (file or in-memory) DuckDB
+#' database.
+#'
+#' @param root A bundle directory path, or a bundle list from [okf_read()].
+#' @param db_path DuckDB path; defaults to in-memory `":memory:"`.
+#' @param ingested_at Optional ISO-8601 timestamp; defaults to the current time.
+#' @param bundle_id Optional stable bundle id.
+#' @param source_kind How the bundle was obtained (e.g. `"dir"`).
+#' @return A list with the open `con`, the `bundle_id`, and a `summary`
+#'   (counts, conformance, link totals). The caller owns/closes `con`.
+#' @export
 okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
                        bundle_id = NULL, source_kind = "dir") {
   rd  <- if (is.list(root) && !is.null(root$concepts)) root
@@ -197,10 +246,23 @@ okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
     links_total = nrow(lk), links_broken = sum(!lk$resolved)))
 }
 
-# --- query helpers ----------------------------------------------------------
+#' Query helpers over an ingested OKF catalog.
+#'
+#' @param con An open DuckDB connection to an okf catalog.
+#' @param term Search term for [okf_search()] (matched against concept bodies).
+#' @return A data.frame: concepts ([okf_concepts]), link edges ([okf_graph_df]),
+#'   validation findings ([okf_findings]), or body matches ([okf_search]).
+#' @name okf_query
+#' @export
 okf_concepts <- function(con) DBI::dbGetQuery(con, "SELECT * FROM okf_concept ORDER BY path")
+#' @rdname okf_query
+#' @export
 okf_graph_df <- function(con) DBI::dbGetQuery(con, "SELECT * FROM okf_link")
+#' @rdname okf_query
+#' @export
 okf_findings <- function(con) DBI::dbGetQuery(con, "SELECT * FROM okf_validation ORDER BY severity, path")
+#' @rdname okf_query
+#' @export
 okf_search   <- function(con, term) DBI::dbGetQuery(con, sprintf(
   "SELECT path, type, title FROM okf_concept WHERE body ILIKE '%%%s%%' ORDER BY path",
   gsub("'", "''", term)))
@@ -211,7 +273,12 @@ okf_search   <- function(con, term) DBI::dbGetQuery(con, sprintf(
 # extension required). The default embedder is local Ollama nomic-embed-text.
 # ============================================================================
 
-# Split a concept body into ~target_chars chunks on paragraph boundaries.
+#' Split a concept body into chunks on paragraph boundaries.
+#'
+#' @param body Concept body text.
+#' @param target_chars Approximate maximum chunk size in characters.
+#' @return Character vector of chunks.
+#' @export
 okf_chunk_body <- function(body, target_chars = 600L) {
   paras <- trimws(strsplit(body %||% "", "\n[ \t]*\n", perl = TRUE)[[1]])
   paras <- paras[nzchar(paras)]
@@ -225,8 +292,16 @@ okf_chunk_body <- function(body, target_chars = 600L) {
   chunks
 }
 
-# An embedder is function(texts) -> list of numeric vectors. Default hits the
-# local Ollama embeddings API; swap in any function (OpenAI, etc.) for OSS use.
+#' Build an embedder backed by a local Ollama embeddings model.
+#'
+#' An embedder is a function of `texts` returning a list of numeric vectors.
+#' Swap in any such function (e.g. an OpenAI client) for [okf_embed()] /
+#' [okf_rag()].
+#'
+#' @param model Ollama embedding model name.
+#' @param url Ollama base URL (defaults to the `OLLAMA_URL` env var or localhost).
+#' @return A function `texts -> list(numeric)`. Requires the httr2 package.
+#' @export
 okf_ollama_embedder <- function(model = "nomic-embed-text",
                                 url = Sys.getenv("OLLAMA_URL", "http://localhost:11434")) {
   if (!requireNamespace("httr2", quietly = TRUE)) stop("okf_ollama_embedder needs the httr2 package")
@@ -241,8 +316,16 @@ okf_ollama_embedder <- function(model = "nomic-embed-text",
 .okf_vec_lit <- function(v) paste0("[", paste(vapply(v, function(z) sprintf("%.8g", z), ""),
                                               collapse = ","), "]::FLOAT[]")
 
-# Chunk + embed every non-reserved concept body into okf_chunk. Idempotent
-# (replaces existing chunks). Returns the number of chunks written.
+#' Chunk and embed concept bodies into the catalog for semantic search.
+#'
+#' Idempotent: replaces any existing chunks. Populates `okf_chunk` with one row
+#' per chunk plus its embedding vector.
+#'
+#' @param con An open DuckDB connection to an okf catalog.
+#' @param embedder An embedder function; defaults to [okf_ollama_embedder()].
+#' @param target_chars Approximate chunk size in characters.
+#' @return The number of chunks written (invisibly usable as an integer).
+#' @export
 okf_embed <- function(con, embedder = NULL, target_chars = 600L) {
   if (is.null(embedder)) embedder <- okf_ollama_embedder()
   DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS okf_chunk (bundle_id TEXT, path TEXT, chunk_id INTEGER, text TEXT, embedding FLOAT[])")
@@ -262,7 +345,17 @@ okf_embed <- function(con, embedder = NULL, target_chars = 600L) {
   n
 }
 
-# Semantic search: embed the query, return the top-k most similar chunks.
+#' Semantic search over an embedded catalog.
+#'
+#' Embeds `query` and returns the top-k most cosine-similar chunks (via DuckDB's
+#' native `list_cosine_similarity`). Run [okf_embed()] first.
+#'
+#' @param con An open DuckDB connection to an embedded okf catalog.
+#' @param query Query string.
+#' @param embedder An embedder function; defaults to [okf_ollama_embedder()].
+#' @param k Number of results to return.
+#' @return A data.frame with `path`, `title`, `chunk_id`, `score`, `text`.
+#' @export
 okf_rag <- function(con, query, embedder = NULL, k = 5L) {
   if (is.null(embedder)) embedder <- okf_ollama_embedder()
   qv <- embedder(query)[[1]]

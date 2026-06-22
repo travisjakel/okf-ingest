@@ -9,6 +9,8 @@ Description: Read, validate, and load Open Knowledge Format (OKF) bundles (a
     semantic search. Conformant and permissive per the OKF v0.1 specification.
 License: Apache License (>= 2)
 Encoding: UTF-8
+Depends:
+    R (>= 4.1.0)
 Imports:
     yaml,
     DBI,
@@ -17,4 +19,4 @@ Imports:
     jsonlite
 Suggests:
     httr2
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.2

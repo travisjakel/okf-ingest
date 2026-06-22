@@ -47,7 +47,10 @@ Per OKF §6, a bundle is **conformant** iff every non-reserved `.md` has parseab
 # Python — installs the `okf` command + importable package
 pip install ./py            # (or: pip install okf-ingest once published)
 
-# R
+# R — from R-universe (no compilation; pulls deps automatically)
+install.packages("okf", repos = c("https://travisjakel.r-universe.dev",
+                                  "https://cloud.r-project.org"))
+# …or from a clone:
 R CMD INSTALL r/okf         # (or: remotes::install_local("r/okf"))
 ```
 
