@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+src/*.o
+src/*.so
+src/*.dll
+
+# Catalogs / scratch
+*.duckdb
+*.duckdb.wal
+*.sqlite
+/_state/
+
+# OS
+.DS_Store
+Thumbs.db

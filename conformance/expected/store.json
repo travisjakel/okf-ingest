@@ -1,0 +1,26 @@
+{
+  "bundle": {
+    "okf_version": "0.1",
+    "n_files": 5,
+    "n_concepts": 3,
+    "n_conformant": 3,
+    "conformant": true,
+    "_note": "n_concepts counts non-reserved concept documents; index.md/log.md are reserved (catalogued with reserved=true but not counted as concepts)"
+  },
+  "concepts": [
+    { "path": "customers.md",        "reserved": false, "type": "BigQuery Table", "n_links_out": 1 },
+    { "path": "index.md",            "reserved": true,  "type": "Index",          "n_links_out": 3 },
+    { "path": "log.md",              "reserved": true,  "type": "Log",            "n_links_out": 0 },
+    { "path": "metrics/revenue.md",  "reserved": false, "type": "Metric",         "n_links_out": 2 },
+    { "path": "orders.md",           "reserved": false, "type": "BigQuery Table", "n_links_out": 2 }
+  ],
+  "links": {
+    "total": 8,
+    "resolved": 7,
+    "broken": [ { "src_path": "metrics/revenue.md", "dst_raw": "/returns.md" } ]
+  },
+  "validation": {
+    "errors": 0,
+    "warn_rules_present": ["broken_link"]
+  }
+}

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "okf-ingest"
+version = "0.1.0"
+description = "Unified ingestion tool for Open Knowledge Format (OKF) bundles — validate, load into a portable DuckDB catalog, and semantically search."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+authors = [{ name = "Travis Jakel", email = "travis.s.jakel@gmail.com" }]
+keywords = ["okf", "open-knowledge-format", "knowledge", "rag", "duckdb", "agents"]
+dependencies = ["pyyaml>=6", "duckdb>=1.0"]
+
+[project.urls]
+Homepage = "https://github.com/travisjakel/okf-ingest"
+Repository = "https://github.com/travisjakel/okf-ingest"
+"OKF Specification" = "https://github.com/GoogleCloudPlatform/knowledge-catalog"
+
+[project.scripts]
+okf = "okf.cli:main"
+
+[tool.setuptools]
+packages = ["okf"]

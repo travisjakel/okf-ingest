@@ -1,0 +1,20 @@
+Package: okf
+Title: Open Knowledge Format (OKF) Ingestion
+Version: 0.1.0
+Authors@R:
+    person("Travis", "Jakel", email = "travis.s.jakel@gmail.com", role = c("aut", "cre"))
+Description: Read, validate, and load Open Knowledge Format (OKF) bundles (a
+    directory of markdown files with YAML frontmatter) into a portable DuckDB
+    catalog, build the concept graph, and optionally embed concept bodies for
+    semantic search. Conformant and permissive per the OKF v0.1 specification.
+License: Apache License (>= 2)
+Encoding: UTF-8
+Imports:
+    yaml,
+    DBI,
+    duckdb,
+    digest,
+    jsonlite
+Suggests:
+    httr2
+RoxygenNote: 7.3.1

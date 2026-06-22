@@ -1,0 +1,113 @@
+#!/usr/bin/env Rscript
+# ============================================================================
+# okf — command-line interface (R). Mirrors py/okf/cli.py.
+#
+#   okf validate <bundle> [--strict] [--json]
+#   okf ingest   <bundle> --db <path> [--id <bundle_id>] [--json]
+#   okf query    <db> [--sql "SELECT ..."] [--search <term>]
+#                     [--concepts] [--links] [--findings] [--json]
+#   okf embed    <db> [--model nomic-embed-text] [--json]
+#   okf rag      <db> --query "..." [-k 5] [--model nomic-embed-text] [--json]
+#
+# Exit codes: 0 ok · 1 conformance failure (errors, or warnings under --strict)
+#             · 2 usage error
+# ============================================================================
+suppressPackageStartupMessages({ library(jsonlite) })
+
+self <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
+if (requireNamespace("okf", quietly = TRUE)) {
+  suppressPackageStartupMessages(library(okf))           # installed package
+} else if (length(self) && nzchar(self)) {
+  source(file.path(normalizePath(file.path(dirname(self), ".."), mustWork = FALSE),
+                   "R", "okf.R"))                         # dev fallback
+} else stop("okf is not installed and the dev source could not be located")
+
+args <- commandArgs(trailingOnly = TRUE)
+flag  <- function(name) name %in% args
+optval <- function(name, default = NULL) {
+  i <- which(args == name)
+  if (length(i) && i[1] < length(args)) return(args[i[1] + 1])
+  kv <- grep(paste0("^", name, "="), args, value = TRUE)
+  if (length(kv)) return(sub(paste0("^", name, "="), "", kv[1]))
+  default
+}
+out_json <- flag("--json")
+emit <- function(x) if (out_json) cat(jsonlite::toJSON(x, auto_unbox = TRUE, pretty = TRUE), "\n")
+
+usage <- function(code = 2) {
+  cat("usage:\n",
+      "  okf validate <bundle> [--strict] [--json]\n",
+      "  okf ingest   <bundle> --db <path> [--id <bundle_id>] [--json]\n",
+      "  okf query    <db> [--sql \"...\"] [--search <term>] [--concepts] [--links] [--findings] [--json]\n",
+      sep = "")
+  quit(status = code)
+}
+
+cmd <- if (length(args)) args[1] else ""
+pos <- args[2]
+
+if (cmd == "validate") {
+  if (is.na(pos)) usage()
+  rd  <- okf_read(pos)
+  val <- okf_validate(rd)
+  nerr <- sum(val$severity == "error"); nwarn <- sum(val$severity == "warn")
+  conf <- nerr == 0
+  if (out_json) {
+    emit(list(bundle = pos, conformant = conf, errors = nerr, warnings = nwarn,
+              findings = if (nrow(val)) val else list()))
+  } else {
+    cat(sprintf("bundle: %s\nconformant: %s  (errors: %d, warnings: %d)\n",
+                pos, conf, nerr, nwarn))
+    if (nrow(val)) for (i in seq_len(nrow(val)))
+      cat(sprintf("  [%-5s] %-22s %s — %s\n", val$severity[i], val$rule[i], val$path[i], val$message[i]))
+  }
+  quit(status = if (!conf || (flag("--strict") && nwarn > 0)) 1 else 0)
+
+} else if (cmd == "ingest") {
+  if (is.na(pos)) usage()
+  db <- optval("--db", ":memory:")
+  res <- okf_ingest(pos, db_path = db, bundle_id = optval("--id"))
+  DBI::dbDisconnect(res$con, shutdown = TRUE)
+  if (out_json) emit(c(list(bundle = pos, db = db, bundle_id = res$bundle_id), res$summary))
+  else {
+    s <- res$summary
+    cat(sprintf("ingested %s -> %s\n  bundle_id=%s\n  concepts=%d conformant=%d (%s) errors=%d warnings=%d links=%d broken=%d\n",
+                pos, db, res$bundle_id, s$n_concepts, s$n_conformant, s$conformant,
+                s$errors, s$warnings, s$links_total, s$links_broken))
+  }
+  quit(status = if (res$summary$conformant) 0 else 1)
+
+} else if (cmd == "query") {
+  if (is.na(pos)) usage()
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  res <- if (!is.null(optval("--sql"))) DBI::dbGetQuery(con, optval("--sql"))
+    else if (!is.null(optval("--search"))) okf_search(con, optval("--search"))
+    else if (flag("--links")) okf_graph_df(con)
+    else if (flag("--findings")) okf_findings(con)
+    else okf_concepts(con)
+  if (out_json) emit(res) else print(res, row.names = FALSE)
+  quit(status = 0)
+
+} else if (cmd == "embed") {
+  if (is.na(pos)) usage()
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = FALSE)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  n <- okf_embed(con, embedder = okf_ollama_embedder(optval("--model", "nomic-embed-text")))
+  if (out_json) emit(list(db = pos, chunks = n)) else cat(sprintf("embedded %d chunks into %s\n", n, pos))
+  quit(status = 0)
+
+} else if (cmd == "rag") {
+  if (is.na(pos)) usage()
+  q <- optval("--query"); if (is.null(q)) usage()
+  con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  res <- okf_rag(con, q, embedder = okf_ollama_embedder(optval("--model", "nomic-embed-text")),
+                 k = as.integer(optval("-k", "5")))
+  if (out_json) emit(res)
+  else for (i in seq_len(nrow(res)))
+    cat(sprintf("[%.3f] %s#%d — %s\n    %s\n", res$score[i], res$path[i], res$chunk_id[i],
+                res$title[i], substr(gsub("\n", " ", res$text[i]), 1, 160)))
+  quit(status = 0)
+
+} else usage()

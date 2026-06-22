@@ -1,0 +1,14 @@
+{
+  "bundle": {
+    "n_concepts": 2,
+    "n_conformant": 0,
+    "conformant": false
+  },
+  "validation": {
+    "errors": 2,
+    "error_rules": [
+      { "path": "missing_type.md",   "rule": "missing_type" },
+      { "path": "no_frontmatter.md", "rule": "frontmatter_unparseable" }
+    ]
+  }
+}
