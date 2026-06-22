@@ -4,6 +4,30 @@ A unified, open-source **ingestion tool for [Open Knowledge Format](https://gith
 
 OKF (Google Cloud, v0.1) is a directory of markdown files with YAML frontmatter — one concept per file, markdown links as a graph. Validators and parsers already exist (Node, a web tool, a pure-Rust crate). **What no other tool does — and what this one is for — is load a bundle into a SQL-queryable DuckDB catalog with built-in semantic search (RAG), and do it from R or Python** (there was no R or Python OKF tooling at all). See [Related tools](#related-tools).
 
+## Quickstart
+
+Turn an OKF bundle into a semantically-searchable catalog in four commands:
+
+```bash
+pip install okf-ingest          # or: pip install ./py  (from a clone)
+
+okf validate ./my-bundle                  # conformance check (exit 1 if non-conformant)
+okf ingest   ./my-bundle --db kb.duckdb   # load into a portable DuckDB catalog
+okf embed    kb.duckdb                     # chunk + embed (local Ollama nomic-embed-text by default)
+okf rag      kb.duckdb --query "how is revenue computed?" -k 5
+```
+
+```text
+[0.71] metrics/revenue.md#1 — Revenue
+    # Revenue  Computed from [orders](/orders.md)...
+[0.64] orders.md#1 — Orders
+    # Orders  The orders fact table. Each order belongs to a customer...
+```
+
+The catalog is plain DuckDB — query it with SQL, R, Python, or the bare `duckdb`
+CLI. Ingest/embed in one language, query from the other. From R it's the same
+flow via `library(okf)` (see [Usage](#usage)).
+
 ## Why "core + bindings" without a binary core
 
 The interoperability **core is a contract, not compiled code**:
