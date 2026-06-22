@@ -10,27 +10,37 @@ OKF (Google Cloud, v0.1) is a directory of markdown files with YAML frontmatter 
 
 ## Quickstart
 
-Turn an OKF bundle into a semantically-searchable catalog in four commands:
+One tool, two bindings — use whichever you live in.
 
-```bash
-pip install okf-ingest          # or: pip install ./py  (from a clone)
+**R** — from [R-universe](https://travisjakel.r-universe.dev):
 
-okf validate ./my-bundle                  # conformance check (exit 1 if non-conformant)
-okf ingest   ./my-bundle --db kb.duckdb   # load into a portable DuckDB catalog
-okf embed    kb.duckdb                     # chunk + embed (local Ollama nomic-embed-text by default)
-okf rag      kb.duckdb --query "how is revenue computed?" -k 5
+```r
+install.packages("okf", repos = c(travisjakel = "https://travisjakel.r-universe.dev",
+                                  CRAN = "https://cloud.r-project.org"))
+library(okf)
+
+res <- okf_ingest("my-bundle", db_path = "kb.duckdb")   # dir, git URL, or tar/zip
+okf_embed(res$con)                                       # local Ollama nomic-embed-text
+okf_rag(res$con, "how is revenue computed?", k = 3)[, c("path", "title", "score")]
+#>                 path   title score
+#> 1 metrics/revenue.md Revenue 0.709
+#> 2          orders.md  Orders 0.642
 ```
 
-```text
-[0.71] metrics/revenue.md#1 — Revenue
-    # Revenue  Computed from [orders](/orders.md)...
-[0.64] orders.md#1 — Orders
-    # Orders  The orders fact table. Each order belongs to a customer...
+**Python / CLI** — from [PyPI](https://pypi.org/project/okf-ingest/):
+
+```bash
+pip install okf-ingest
+
+okf ingest ./my-bundle --db kb.duckdb      # dir, git URL, or tar/zip
+okf embed  kb.duckdb
+okf rag    kb.duckdb --query "how is revenue computed?" -k 5
+# [0.71] metrics/revenue.md#1 — Revenue
+# [0.64] orders.md#1 — Orders
 ```
 
 The catalog is plain DuckDB — query it with SQL, R, Python, or the bare `duckdb`
-CLI. Ingest/embed in one language, query from the other. From R it's the same
-flow via `library(okf)` (see [Usage](#usage)).
+CLI. Ingest/embed in one language, query from the other.
 
 ## Why "core + bindings" without a binary core
 
