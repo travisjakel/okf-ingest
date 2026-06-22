@@ -1,6 +1,6 @@
 Package: okf
 Title: Open Knowledge Format (OKF) Ingestion
-Version: 0.1.0
+Version: 0.1.1
 Authors@R:
     person("Travis", "Jakel", email = "travis.s.jakel@gmail.com", role = c("aut", "cre"))
 Description: Read, validate, and load Open Knowledge Format (OKF) bundles (a

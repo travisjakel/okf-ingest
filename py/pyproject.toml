@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "okf-ingest"
-version = "0.1.0"
+version = "0.1.1"
 description = "Unified ingestion tool for Open Knowledge Format (OKF) bundles — validate, load into a portable DuckDB catalog, and semantically search."
 readme = "README.md"
 requires-python = ">=3.9"
