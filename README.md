@@ -42,7 +42,7 @@ override (the conformance suite does, which is how it stays byte-stable). The
 knowledge representation itself — concepts, graph, clusters, render — is 100%
 deterministic and model-free.
 
-## Do you actually need this?
+## Do you actually need RAG?
 
 Often you don't — by design. OKF bundles are meant to be read *directly* by an
 agent: load `index.md`, follow the curated links, pull the few relevant concept
@@ -160,7 +160,7 @@ Both produce the same `okf_bundle / okf_concept / okf_link / okf_validation` tab
 ### Semantic search (RAG)
 
 > Optional, and overkill for small curated bundles — see
-> [Do you actually need this?](#do-you-actually-need-this). It pays off for large
+> [Do you actually need RAG?](#do-you-actually-need-rag). It pays off for large
 > or cross-corpus knowledge bases, not a hand-linked folder of a few dozen concepts.
 
 `embed` chunks concept bodies (paragraph-merged to ~600 chars), embeds each via
