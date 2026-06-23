@@ -145,11 +145,14 @@ package, or falls back to dev source):
 
 ```bash
 okf validate <bundle> [--strict] [--json]      # lint; exit 1 on errors (or warnings w/ --strict)
-okf ingest   <source> --db catalog.duckdb [--subdir <p>] [--branch <b>] [--json]
+okf ingest   <source> --db catalog.duckdb [--subdir <p>] [--branch <b>] [--incremental] [--json]
 okf query    catalog.duckdb [--sql "…"] [--search <term>] [--concepts|--links|--findings] [--json]
 okf context  <bundle|catalog> [--start <concept>] [--depth N] [--max-tokens N]  # LLM-wiki context blob
 okf html     <bundle|catalog> --out <dir> | --single <file.html> [--title T]    # render for viewing
-okf embed    catalog.duckdb [--model nomic-embed-text]      # chunk + embed bodies for semantic search
+okf graph    <bundle|catalog> --out <file.html> [--title T]                     # interactive force-directed graph
+okf export   <bundle|catalog> [--json]                      # portable {nodes, edges} graph JSON
+okf impact   <bundle|catalog> <concept> [--json]            # inbound / outbound / transitive ripple
+okf embed    catalog.duckdb [--model nomic-embed-text] [--incremental]  # chunk + embed bodies for search
 okf rag      catalog.duckdb --query "…" [-k 5] [--model …]  # top-k semantic matches
 ```
 
@@ -182,11 +185,40 @@ okf html ./my-bundle --single bundle.html   # one self-contained file (concepts 
 Internal `.md` links are rewritten to **page-relative** `.html` (site) or
 in-page `#anchors` (single), so the result works straight off the filesystem
 (`file://`) however the source wrote its links. Each page gets a metadata bar
-(type / status / timestamp / tags) and a footer badge that surfaces broken or
-orphan links from `validate`. Bodies render via a thin markdown engine
-(R `commonmark`, a Suggests dep; Python `markdown` via the `okf-ingest[html]`
-extra). Like `context`, it accepts a bundle (dir/git/tar/zip) or a `.duckdb`
-catalog.
+(type / status / timestamp / tags), a **"Linked from"** backlinks line, and a
+footer badge that surfaces broken or orphan links from `validate`. Bodies render
+via a thin markdown engine (R `commonmark`, a Suggests dep; Python `markdown` via
+the `okf-ingest[html]` extra). Like `context`, it accepts a bundle
+(dir/git/tar/zip) or a `.duckdb` catalog.
+
+### `graph` / `export` / `impact` — the concept graph, surfaced
+
+The catalog already holds the link graph; these expose it (all **deterministic**,
+no LLM):
+
+```bash
+okf graph  ./my-bundle --out graph.html   # interactive force-directed page (vanilla JS, no CDN)
+okf export ./my-bundle > graph.json       # portable {nodes, edges} for any external visualizer
+okf impact ./my-bundle signals/x.md       # outbound / inbound / transitive ripple of a concept
+```
+
+`graph` is a single self-contained HTML page — pan/zoom/drag, type-to-search,
+nodes coloured by OKF type with community clustering as the fallback (a
+deterministic label-propagation, [`okf_clusters`]). Click a node to open its
+rendered `.html`, so dropping `graph.html` into a `html --out` site root turns it
+into a live map. `export` emits the same node/edge model as JSON (nodes carry
+`id`/`type`/`title`/`tags`/`cluster`/`href`), extending the "core is a contract"
+idea beyond the DuckDB catalog. `impact` answers "what does changing this ripple
+to" from the resolved-link graph.
+
+### `--incremental` — re-ingest / re-embed only what changed
+
+`ingest --incremental` diffs each concept's `content_hash` against a prior ingest
+into the same `--db`, rewriting only changed/added concepts (and dropping removed
+ones); the JSON summary reports `changed`/`added`/`removed`/`cached`. `embed
+--incremental` re-embeds only concepts whose content changed, skipping the
+expensive embedder calls for the rest — the right default for large, often-edited
+wikis.
 
 A `<source>` is a local directory, a **git URL** (github/gitlab/bitbucket, `.git`,
 or `git@`), or a **tar/zip archive** (local path or `http(s)` URL). Remote sources

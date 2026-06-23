@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS okf_link (bundle_id TEXT, src_path TEXT, dst_raw TEXT
 CREATE TABLE IF NOT EXISTS okf_validation (bundle_id TEXT, path TEXT, severity TEXT,
   rule TEXT, message TEXT);
 CREATE TABLE IF NOT EXISTS okf_chunk (bundle_id TEXT, path TEXT, chunk_id INTEGER,
-  text TEXT, embedding FLOAT[]);
+  text TEXT, embedding FLOAT[], content_hash TEXT);
 "
 
 #' Parse the YAML frontmatter and body of a single OKF concept file.
@@ -283,12 +283,17 @@ okf_fetch <- function(source, subdir = NULL, branch = NULL) {
 #'   fetched sources.
 #' @param subdir Optional bundle path within a cloned/extracted source.
 #' @param branch Optional git branch or tag (git sources only).
+#' @param incremental Only rewrite concepts whose `content_hash` changed since a
+#'   prior ingest of the same bundle into `db_path` (added/removed handled too);
+#'   links and validation are always recomputed (they are graph-global). Falls
+#'   back to a full load if the bundle is not already present. The `summary`
+#'   then includes `changed`/`added`/`removed`/`cached` counts.
 #' @return A list with the open `con`, the `bundle_id`, and a `summary`
 #'   (counts, conformance, link totals). The caller owns/closes `con`.
 #' @export
 okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
                        bundle_id = NULL, source_kind = "dir",
-                       subdir = NULL, branch = NULL) {
+                       subdir = NULL, branch = NULL, incremental = FALSE) {
   if (is.character(root) && length(root) == 1L && !dir.exists(root)) {
     f <- okf_fetch(root, subdir = subdir, branch = branch)
     on.exit(f$cleanup(), add = TRUE)
@@ -309,33 +314,61 @@ okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
   for (stmt in Filter(nzchar, trimws(strsplit(OKF_SCHEMA, ";")[[1]])))
     DBI::dbExecute(con, stmt)
 
-  DBI::dbAppendTable(con, "okf_bundle", data.frame(
-    bundle_id = rd$bundle_id, root = rd$root, okf_version = rd$okf_version,
-    source_kind = rd$source_kind, ingested_at = ingested_at,
-    n_concepts = length(non_reserved), n_conformant = n_conf,
-    conformant = sum(val$severity == "error") == 0, stringsAsFactors = FALSE))
+  bid <- rd$bundle_id
+  prior <- DBI::dbGetQuery(con, "SELECT path, content_hash FROM okf_concept WHERE bundle_id = ?",
+                           params = list(bid))
+  incr <- isTRUE(incremental) && nrow(prior) > 0
 
+  # Per-concept rows for the whole bundle.
   cdf <- do.call(rbind, lapply(rd$concepts, function(c) data.frame(
-    bundle_id = rd$bundle_id, path = c$path, reserved = c$reserved, type = c$type,
+    bundle_id = bid, path = c$path, reserved = c$reserved, type = c$type,
     title = c$title, description = c$description, resource = c$resource,
     tags = if (is.null(c$tags)) NA_character_ else as.character(jsonlite::toJSON(c$tags)),
     timestamp = c$timestamp, body = c$body,
     frontmatter = as.character(jsonlite::toJSON(c$frontmatter %||% list(), auto_unbox = TRUE, null = "null")),
     parse_error = c$parse_error, content_hash = c$content_hash, stringsAsFactors = FALSE)))
-  DBI::dbAppendTable(con, "okf_concept", cdf)
 
+  inc_stats <- NULL
+  if (incr) {
+    cur <- setNames(cdf$content_hash, cdf$path); old <- setNames(prior$content_hash, prior$path)
+    changed <- intersect(names(cur), names(old)); changed <- changed[cur[changed] != old[changed]]
+    added   <- setdiff(names(cur), names(old))
+    removed <- setdiff(names(old), names(cur))
+    write_paths <- c(changed, added)
+    if (length(c(changed, removed)))
+      DBI::dbExecute(con, sprintf("DELETE FROM okf_concept WHERE bundle_id = ? AND path IN (%s)",
+        paste(sprintf("'%s'", gsub("'", "''", c(changed, removed))), collapse = ",")), params = list(bid))
+    if (length(write_paths)) DBI::dbAppendTable(con, "okf_concept", cdf[cdf$path %in% write_paths, , drop = FALSE])
+    inc_stats <- list(changed = length(changed), added = length(added),
+                      removed = length(removed), cached = length(intersect(names(cur), names(old))) - length(changed))
+  } else {
+    # Full (re)load: idempotent replace of any prior rows for this bundle.
+    for (t in c("okf_bundle", "okf_concept", "okf_link", "okf_validation"))
+      DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE bundle_id = ?", t), params = list(bid))
+    DBI::dbAppendTable(con, "okf_concept", cdf)
+  }
+
+  # Bundle row + graph-global tables: always rewritten to current state.
+  DBI::dbExecute(con, "DELETE FROM okf_bundle WHERE bundle_id = ?", params = list(bid))
+  DBI::dbAppendTable(con, "okf_bundle", data.frame(
+    bundle_id = bid, root = rd$root, okf_version = rd$okf_version,
+    source_kind = rd$source_kind, ingested_at = ingested_at,
+    n_concepts = length(non_reserved), n_conformant = n_conf,
+    conformant = sum(val$severity == "error") == 0, stringsAsFactors = FALSE))
+  DBI::dbExecute(con, "DELETE FROM okf_link WHERE bundle_id = ?", params = list(bid))
+  DBI::dbExecute(con, "DELETE FROM okf_validation WHERE bundle_id = ?", params = list(bid))
   if (nrow(lk)) DBI::dbAppendTable(con, "okf_link", data.frame(
-    bundle_id = rd$bundle_id, src_path = lk$src_path, dst_raw = lk$dst_raw,
+    bundle_id = bid, src_path = lk$src_path, dst_raw = lk$dst_raw,
     dst_path = lk$dst_path, resolved = lk$resolved, stringsAsFactors = FALSE))
   if (nrow(val)) DBI::dbAppendTable(con, "okf_validation", data.frame(
-    bundle_id = rd$bundle_id, path = val$path, severity = val$severity,
+    bundle_id = bid, path = val$path, severity = val$severity,
     rule = val$rule, message = val$message, stringsAsFactors = FALSE))
 
-  list(con = con, bundle_id = rd$bundle_id, summary = list(
+  list(con = con, bundle_id = bid, summary = c(list(
     n_files = length(rd$concepts), n_concepts = length(non_reserved), n_conformant = n_conf,
     conformant = sum(val$severity == "error") == 0,
     errors = sum(val$severity == "error"), warnings = sum(val$severity == "warn"),
-    links_total = nrow(lk), links_broken = sum(!lk$resolved)))
+    links_total = nrow(lk), links_broken = sum(!lk$resolved)), inc_stats))
 }
 
 #' Query helpers over an ingested OKF catalog.
@@ -410,27 +443,44 @@ okf_ollama_embedder <- function(model = "nomic-embed-text",
 
 #' Chunk and embed concept bodies into the catalog for semantic search.
 #'
-#' Idempotent: replaces any existing chunks. Populates `okf_chunk` with one row
-#' per chunk plus its embedding vector.
+#' Populates `okf_chunk` with one row per chunk plus its embedding vector and
+#' the concept's `content_hash`. By default replaces all chunks. With
+#' `incremental = TRUE`, only concepts whose `content_hash` differs from what was
+#' last embedded are re-embedded (and removed concepts' chunks are dropped) --
+#' the expensive embedder calls are skipped for unchanged concepts.
 #'
 #' @param con An open DuckDB connection to an okf catalog.
 #' @param embedder An embedder function; defaults to [okf_ollama_embedder()].
 #' @param target_chars Approximate chunk size in characters.
-#' @return The number of chunks written (invisibly usable as an integer).
+#' @param incremental Re-embed only concepts whose content changed.
+#' @return The number of chunks (re)written this call (invisibly usable as an integer).
 #' @export
-okf_embed <- function(con, embedder = NULL, target_chars = 600L) {
+okf_embed <- function(con, embedder = NULL, target_chars = 600L, incremental = FALSE) {
   if (is.null(embedder)) embedder <- okf_ollama_embedder()
-  DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS okf_chunk (bundle_id TEXT, path TEXT, chunk_id INTEGER, text TEXT, embedding FLOAT[])")
-  cs <- DBI::dbGetQuery(con, "SELECT bundle_id, path, body FROM okf_concept WHERE reserved = FALSE ORDER BY path")
-  DBI::dbExecute(con, "DELETE FROM okf_chunk")
+  DBI::dbExecute(con, "CREATE TABLE IF NOT EXISTS okf_chunk (bundle_id TEXT, path TEXT, chunk_id INTEGER, text TEXT, embedding FLOAT[], content_hash TEXT)")
+  cs <- DBI::dbGetQuery(con, "SELECT bundle_id, path, body, content_hash FROM okf_concept WHERE reserved = FALSE ORDER BY path")
+  if (incremental) {
+    have <- DBI::dbGetQuery(con, "SELECT DISTINCT path, content_hash FROM okf_chunk")
+    havemap <- setNames(have$content_hash, have$path)
+    # drop chunks for concepts that are gone or whose content changed
+    stale <- union(setdiff(have$path, cs$path),
+                   cs$path[vapply(seq_len(nrow(cs)), function(i)
+                     !identical(unname(havemap[cs$path[i]]), cs$content_hash[i]), logical(1))])
+    if (length(stale)) DBI::dbExecute(con, sprintf("DELETE FROM okf_chunk WHERE path IN (%s)",
+      paste(sprintf("'%s'", gsub("'", "''", stale)), collapse = ",")))
+    todo <- cs[cs$path %in% stale | !(cs$path %in% have$path), , drop = FALSE]
+    cs <- todo
+  } else {
+    DBI::dbExecute(con, "DELETE FROM okf_chunk")
+  }
   n <- 0L
   for (i in seq_len(nrow(cs))) {
     chs <- okf_chunk_body(cs$body[i], target_chars)
     if (!length(chs)) next
     embs <- embedder(chs)
     for (k in seq_along(chs)) {
-      DBI::dbExecute(con, sprintf("INSERT INTO okf_chunk VALUES (?,?,?,?, %s)", .okf_vec_lit(embs[[k]])),
-                     params = list(cs$bundle_id[i], cs$path[i], k, chs[k]))
+      DBI::dbExecute(con, sprintf("INSERT INTO okf_chunk VALUES (?,?,?,?, %s, ?)", .okf_vec_lit(embs[[k]])),
+                     params = list(cs$bundle_id[i], cs$path[i], k, chs[k], cs$content_hash[i]))
       n <- n + 1L
     }
   }

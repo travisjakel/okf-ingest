@@ -119,6 +119,21 @@ def _meta_bar(row: dict, status: Optional[str]) -> str:
     return bar + desc
 
 
+def _href_for(target: str, page: str, single: bool) -> str:
+    if single:
+        return "#" + _slug(target)
+    return _relpath(os.path.dirname(page), re.sub(r"\.md$", ".html", target))
+
+
+def _backlinks_html(page: str, blmap: dict, titlemap: dict, single: bool) -> str:
+    srcs = blmap.get(page)
+    if not srcs:
+        return ""
+    items = " · ".join(
+        f'<a href="{_href_for(s, page, single)}">{_esc(titlemap.get(s) or s)}</a>' for s in srcs)
+    return f'<div class="okf-foot">Linked from: {items}</div>'
+
+
 def _footer(page: str, val: list) -> str:
     rules = [f["rule"] for f in val if f["path"] == page]
     nb = rules.count("broken_link")
@@ -162,6 +177,11 @@ def render_html(con, out: str, single: bool = False, site_title: Optional[str] =
     val = [{"path": p, "rule": rl} for p, rl in
            con.execute("SELECT path, rule FROM okf_validation").fetchall()]
     known = {c["path"] for c in cps}
+    blmap = {}
+    for s, d in con.execute(
+            "SELECT DISTINCT src_path, dst_path FROM okf_link WHERE resolved ORDER BY src_path").fetchall():
+        blmap.setdefault(d, []).append(s)
+    titlemap = {c["path"]: c["title"] for c in cps}
     row = con.execute("SELECT root FROM okf_bundle LIMIT 1").fetchone()
     root = row[0] if row else None
     if not site_title:
@@ -187,7 +207,8 @@ def render_html(con, out: str, single: bool = False, site_title: Optional[str] =
         nav = f'<div class="okf-nav"><strong>{_esc(site_title)}</strong> &mdash; {nav_links}</div>'
         secs = [
             f'<section id="{_slug(c["path"])}">\n{_meta_bar(c, status_of(c["frontmatter"]))}\n'
-            f'{render_one(c)}\n{_footer(c["path"], val)}\n</section>'
+            f'{render_one(c)}\n{_footer(c["path"], val)}\n'
+            f'{_backlinks_html(c["path"], blmap, titlemap, True)}\n</section>'
             for c in order
         ]
         html = _doc(site_title, nav + "\n" + "\n".join(secs))
@@ -205,7 +226,8 @@ def render_html(con, out: str, single: bool = False, site_title: Optional[str] =
         dest = os.path.join(out, rel)
         os.makedirs(os.path.dirname(dest) or out, exist_ok=True)
         inner = (f'{_meta_bar(c, status_of(c["frontmatter"]))}\n{render_one(c)}\n'
-                 f'{_footer(c["path"], val)}')
+                 f'{_footer(c["path"], val)}\n'
+                 f'{_backlinks_html(c["path"], blmap, titlemap, False)}')
         with open(dest, "w", encoding="utf-8") as fh:
             fh.write(_doc(c["title"] or c["path"], inner))
         files.append(dest)

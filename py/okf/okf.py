@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS okf_link (bundle_id TEXT, src_path TEXT, dst_raw TEXT
 CREATE TABLE IF NOT EXISTS okf_validation (bundle_id TEXT, path TEXT, severity TEXT,
   rule TEXT, message TEXT);
 CREATE TABLE IF NOT EXISTS okf_chunk (bundle_id TEXT, path TEXT, chunk_id INTEGER,
-  text TEXT, embedding FLOAT[]);
+  text TEXT, embedding FLOAT[], content_hash TEXT);
 """
 
 
@@ -310,7 +310,8 @@ def fetch(source: str, subdir: Optional[str] = None, branch: Optional[str] = Non
 
 def ingest(root, db_path: str = ":memory:", ingested_at: Optional[str] = None,
            bundle_id: Optional[str] = None, source_kind: str = "dir",
-           subdir: Optional[str] = None, branch: Optional[str] = None):
+           subdir: Optional[str] = None, branch: Optional[str] = None,
+           incremental: bool = False):
     cleanup = None
     try:
         if isinstance(root, Bundle):
@@ -320,13 +321,20 @@ def ingest(root, db_path: str = ":memory:", ingested_at: Optional[str] = None,
             b = read_bundle(d, bundle_id, kind)
         else:
             b = read_bundle(root, bundle_id, source_kind)
-        return _ingest_bundle(b, db_path, ingested_at)
+        return _ingest_bundle(b, db_path, ingested_at, incremental)
     finally:
         if cleanup:
             cleanup()
 
 
-def _ingest_bundle(b, db_path, ingested_at):
+def _concept_row(b, c):
+    return [b.bundle_id, c.path, c.reserved, c.type, c.title, c.description,
+            c.resource, None if c.tags is None else json.dumps(c.tags),
+            c.timestamp, c.body, json.dumps(c.frontmatter or {}),
+            c.parse_error, c.content_hash]
+
+
+def _ingest_bundle(b, db_path, ingested_at, incremental=False):
     val = validate(b)
     lk = links(b)
     if ingested_at is None:
@@ -335,26 +343,51 @@ def _ingest_bundle(b, db_path, ingested_at):
     err_paths = {f["path"] for f in val if f["severity"] == "error"}
     non_reserved = [c for c in b.concepts if not c.reserved]
     n_conf = sum(1 for c in non_reserved if c.path not in err_paths)
+    bid = b.bundle_id
 
     con = duckdb.connect(db_path)
     for stmt in (s.strip() for s in SCHEMA.split(";") if s.strip()):
         con.execute(stmt)
 
+    prior = dict(con.execute(
+        "SELECT path, content_hash FROM okf_concept WHERE bundle_id = ?", [bid]).fetchall())
+    incr = bool(incremental) and len(prior) > 0
+    inc_stats = {}
+
+    if incr:
+        cur = {c.path: c.content_hash for c in b.concepts}
+        changed = [p for p in cur if p in prior and cur[p] != prior[p]]
+        added = [p for p in cur if p not in prior]
+        removed = [p for p in prior if p not in cur]
+        drop = changed + removed
+        if drop:
+            con.execute("DELETE FROM okf_concept WHERE bundle_id = ? AND path IN ({})".format(
+                ",".join("?" * len(drop))), [bid] + drop)
+        for c in b.concepts:
+            if c.path in changed or c.path in added:
+                con.execute("INSERT INTO okf_concept VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", _concept_row(b, c))
+        kept = len(set(cur) & set(prior))
+        inc_stats = {"changed": len(changed), "added": len(added),
+                     "removed": len(removed), "cached": kept - len(changed)}
+    else:
+        for t in ("okf_bundle", "okf_concept", "okf_link", "okf_validation"):
+            con.execute(f"DELETE FROM {t} WHERE bundle_id = ?", [bid])
+        for c in b.concepts:
+            con.execute("INSERT INTO okf_concept VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", _concept_row(b, c))
+
+    # Bundle row + graph-global tables: always rewritten to current state.
+    con.execute("DELETE FROM okf_bundle WHERE bundle_id = ?", [bid])
     con.execute("INSERT INTO okf_bundle VALUES (?,?,?,?,?,?,?,?)",
-                [b.bundle_id, b.root, b.okf_version, b.source_kind, ingested_at,
+                [bid, b.root, b.okf_version, b.source_kind, ingested_at,
                  len(non_reserved), n_conf, len(err_paths) == 0])
-    for c in b.concepts:
-        con.execute("INSERT INTO okf_concept VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    [b.bundle_id, c.path, c.reserved, c.type, c.title, c.description,
-                     c.resource, None if c.tags is None else json.dumps(c.tags),
-                     c.timestamp, c.body, json.dumps(c.frontmatter or {}),
-                     c.parse_error, c.content_hash])
+    con.execute("DELETE FROM okf_link WHERE bundle_id = ?", [bid])
+    con.execute("DELETE FROM okf_validation WHERE bundle_id = ?", [bid])
     for lk_ in lk:
         con.execute("INSERT INTO okf_link VALUES (?,?,?,?,?)",
-                    [b.bundle_id, lk_["src_path"], lk_["dst_raw"], lk_["dst_path"], lk_["resolved"]])
+                    [bid, lk_["src_path"], lk_["dst_raw"], lk_["dst_path"], lk_["resolved"]])
     for f in val:
         con.execute("INSERT INTO okf_validation VALUES (?,?,?,?,?)",
-                    [b.bundle_id, f["path"], f["severity"], f["rule"], f["message"]])
+                    [bid, f["path"], f["severity"], f["rule"], f["message"]])
 
     summary = {
         "n_files": len(b.concepts), "n_concepts": len(non_reserved), "n_conformant": n_conf,
@@ -362,6 +395,7 @@ def _ingest_bundle(b, db_path, ingested_at):
         "errors": sum(1 for f in val if f["severity"] == "error"),
         "warnings": sum(1 for f in val if f["severity"] == "warn"),
         "links_total": len(lk), "links_broken": sum(1 for x in lk if not x["resolved"]),
+        **inc_stats,
     }
     return con, summary
 

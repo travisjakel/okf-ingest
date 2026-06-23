@@ -132,6 +132,22 @@ blockquote{margin:1rem 0;padding:.2rem 1rem;border-left:4px solid var(--line);co
   paste0(bar, desc)
 }
 
+# Resolve a known concept path to its rendered href for the current mode.
+.okf_href_for <- function(target, page, single) {
+  if (single) return(paste0("#", .okf_slug(target)))
+  d <- dirname(page); if (d == ".") d <- ""
+  .okf_relpath(d, sub("\\.md$", ".html", target))
+}
+
+# "Linked from" backlinks line (the wiki's key navigation affordance).
+.okf_backlinks_html <- function(page, blmap, titlemap, single) {
+  srcs <- blmap[[page]]
+  if (!length(srcs)) return("")
+  items <- vapply(srcs, function(s) sprintf('<a href="%s">%s</a>',
+    .okf_href_for(s, page, single), .okf_esc(titlemap[[s]] %|NA|% s)), "")
+  sprintf('<div class="okf-foot">Linked from: %s</div>', paste(items, collapse = " · "))
+}
+
 # Per-page footer badge derived from the validation findings (broken / orphan).
 .okf_footer <- function(page, val) {
   v <- val[val$path == page, , drop = FALSE]
@@ -180,6 +196,10 @@ okf_html <- function(con, out, single = FALSE, site_title = NULL) {
                   error = function(e) data.frame(path = character(), rule = character()))
   if (!nrow(cps)) stop("catalog has no concepts to render")
   known <- cps$path
+  bl <- tryCatch(DBI::dbGetQuery(con, "SELECT DISTINCT src_path, dst_path FROM okf_link WHERE resolved ORDER BY src_path"),
+                 error = function(e) data.frame(src_path = character(), dst_path = character()))
+  blmap <- if (nrow(bl)) split(bl$src_path, bl$dst_path) else list()
+  titlemap <- setNames(as.list(cps$title), cps$path)
   root <- tryCatch(DBI::dbGetQuery(con, "SELECT root FROM okf_bundle LIMIT 1")$root,
                    error = function(e) NA_character_)
   if (is.null(site_title) || is.na(site_title %|NA|% NA))
@@ -205,9 +225,10 @@ okf_html <- function(con, out, single = FALSE, site_title = NULL) {
                   }, ""), collapse = ""), "</div>")
     secs <- vapply(order_idx, function(i) {
       row <- cps[i, , drop = FALSE]
-      sprintf('<section id="%s">\n%s\n%s\n%s\n</section>',
+      sprintf('<section id="%s">\n%s\n%s\n%s\n%s\n</section>',
               .okf_slug(row$path), .okf_meta_bar(row, status_of(row$frontmatter)),
-              render_one(i), .okf_footer(row$path, val))
+              render_one(i), .okf_footer(row$path, val),
+              .okf_backlinks_html(row$path, blmap, titlemap, TRUE))
     }, "")
     html <- .okf_doc(site_title, paste0(nav, "\n", paste(secs, collapse = "\n")))
     dir.create(dirname(normalizePath(out, mustWork = FALSE)), showWarnings = FALSE, recursive = TRUE)
@@ -227,7 +248,8 @@ okf_html <- function(con, out, single = FALSE, site_title = NULL) {
     dir.create(dirname(dest), showWarnings = FALSE, recursive = TRUE)
     title <- row$title %|NA|% row$path
     inner <- paste0(.okf_meta_bar(row, status_of(row$frontmatter)), "\n",
-                    render_one(i), "\n", .okf_footer(row$path, val))
+                    render_one(i), "\n", .okf_footer(row$path, val), "\n",
+                    .okf_backlinks_html(row$path, blmap, titlemap, FALSE))
     writeLines(.okf_doc(title, inner), dest, useBytes = TRUE)
     files <- c(files, dest)
   }

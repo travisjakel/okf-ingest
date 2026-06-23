@@ -5,6 +5,9 @@
   okf ingest   <bundle> --db <path> [--id <id>] [--json]
   okf query    <db> [--sql "..."] [--search <term>] [--concepts] [--links] [--findings] [--json]
   okf html     <bundle|db> --out <dir> | --single <file.html> [--title T]
+  okf graph    <bundle|db> --out <file.html> [--title T]
+  okf export   <bundle|db> [--json]                 # portable {nodes, edges} graph JSON
+  okf impact   <bundle|db> <concept> [--json]       # inbound / outbound / transitive
 
 Exit codes: 0 ok · 1 conformance failure · 2 usage error.
 """
@@ -37,7 +40,7 @@ def main(argv=None):
     i = sub.add_parser("ingest"); i.add_argument("bundle")
     i.add_argument("--db", default=":memory:"); i.add_argument("--id", default=None)
     i.add_argument("--subdir", default=None); i.add_argument("--branch", default=None)
-    i.add_argument("--json", action="store_true")
+    i.add_argument("--incremental", action="store_true"); i.add_argument("--json", action="store_true")
 
     q = sub.add_parser("query"); q.add_argument("db")
     q.add_argument("--sql"); q.add_argument("--search")
@@ -55,8 +58,19 @@ def main(argv=None):
     h.add_argument("--title"); h.add_argument("--subdir"); h.add_argument("--branch")
     h.add_argument("--json", action="store_true")
 
+    gr = sub.add_parser("graph"); gr.add_argument("source")
+    gr.add_argument("--out"); gr.add_argument("--title")
+    gr.add_argument("--subdir"); gr.add_argument("--branch")
+
+    ex = sub.add_parser("export"); ex.add_argument("source")
+    ex.add_argument("--subdir"); ex.add_argument("--branch"); ex.add_argument("--json", action="store_true")
+
+    im = sub.add_parser("impact"); im.add_argument("source"); im.add_argument("concept")
+    im.add_argument("--subdir"); im.add_argument("--branch"); im.add_argument("--json", action="store_true")
+
     e = sub.add_parser("embed"); e.add_argument("db")
-    e.add_argument("--model", default="nomic-embed-text"); e.add_argument("--json", action="store_true")
+    e.add_argument("--model", default="nomic-embed-text")
+    e.add_argument("--incremental", action="store_true"); e.add_argument("--json", action="store_true")
 
     r = sub.add_parser("rag"); r.add_argument("db"); r.add_argument("--query", required=True)
     r.add_argument("-k", type=int, default=5); r.add_argument("--model", default="nomic-embed-text")
@@ -81,9 +95,15 @@ def main(argv=None):
                 print(f"  [{f['severity']:<5}] {f['rule']:<22} {f['path']} — {f['message']}")
         return 1 if (not conf or (a.strict and nwarn > 0)) else 0
 
+    def _open(source, subdir, branch):
+        if source.endswith(".duckdb") and os.path.isfile(source):
+            return duckdb.connect(source, read_only=True)
+        con, _ = okf.ingest(source, subdir=subdir, branch=branch)
+        return con
+
     if a.cmd == "ingest":
         con, s = okf.ingest(a.bundle, db_path=a.db, bundle_id=a.id,
-                            subdir=a.subdir, branch=a.branch)
+                            subdir=a.subdir, branch=a.branch, incremental=a.incremental)
         con.close()
         if a.json:
             print(json.dumps({"bundle": a.bundle, "db": a.db, **s}, indent=2))
@@ -91,6 +111,9 @@ def main(argv=None):
             print(f"ingested {a.bundle} -> {a.db}\n  concepts={s['n_concepts']} "
                   f"conformant={s['n_conformant']} ({s['conformant']}) errors={s['errors']} "
                   f"warnings={s['warnings']} links={s['links_total']} broken={s['links_broken']}")
+            if "changed" in s:
+                print(f"  incremental: changed={s['changed']} added={s['added']} "
+                      f"removed={s['removed']} cached={s['cached']}")
         return 0 if s["conformant"] else 1
 
     if a.cmd == "query":
@@ -147,10 +170,45 @@ def main(argv=None):
             print(json.dumps(r, indent=2))
         return 0
 
+    if a.cmd == "graph":
+        from okf.graph import graph_html
+        if not a.out:
+            print("graph: need --out <file.html>"); return 2
+        con = _open(a.source, a.subdir, a.branch)
+        try:
+            graph_html(con, a.out, site_title=a.title)
+        finally:
+            con.close()
+        return 0
+
+    if a.cmd == "export":
+        from okf.graph import graph_json
+        con = _open(a.source, a.subdir, a.branch)
+        try:
+            sys.stdout.write(graph_json(con) + "\n")
+        finally:
+            con.close()
+        return 0
+
+    if a.cmd == "impact":
+        from okf.graph import impact
+        con = _open(a.source, a.subdir, a.branch)
+        try:
+            im = impact(con, a.concept)
+        finally:
+            con.close()
+        if a.json:
+            print(json.dumps(im, indent=2))
+        else:
+            print(f"impact of {a.concept}")
+            for k in ("outbound", "inbound", "transitive"):
+                print(f"  {k} ({len(im[k])}): {', '.join(im[k])}")
+        return 0
+
     if a.cmd == "embed":
         con = duckdb.connect(a.db)
         try:
-            n = rag_embed(con, embedder=ollama_embedder(a.model))
+            n = rag_embed(con, embedder=ollama_embedder(a.model), incremental=a.incremental)
         finally:
             con.close()
         print(json.dumps({"db": a.db, "chunks": n}) if a.json else f"embedded {n} chunks into {a.db}")

@@ -5,7 +5,8 @@ from .okf import read_bundle, validate, links, ingest, search, fetch, context, B
 from .rag import chunk_body, ollama_embedder, embed
 from .rag import rag as rag_search
 from .html import render_html
+from .graph import backlinks, impact, clusters, graph_json, graph_html
 
 __all__ = ["read_bundle", "validate", "links", "ingest", "search", "fetch", "context",
            "Bundle", "Concept", "chunk_body", "ollama_embedder", "embed", "rag_search",
-           "render_html"]
+           "render_html", "backlinks", "impact", "clusters", "graph_json", "graph_html"]

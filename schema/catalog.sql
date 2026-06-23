@@ -58,9 +58,10 @@ CREATE TABLE IF NOT EXISTS okf_validation (
 -- Optional "+queryable index" layer: body chunks + embeddings for search/RAG.
 -- embedding stays NULL unless an embedder is supplied at ingest time.
 CREATE TABLE IF NOT EXISTS okf_chunk (
-  bundle_id  TEXT,
-  path       TEXT,
-  chunk_id   INTEGER,
-  text       TEXT,
-  embedding  FLOAT[]               -- DuckDB; in SQLite store as a BLOB/JSON instead
+  bundle_id    TEXT,
+  path         TEXT,
+  chunk_id     INTEGER,
+  text         TEXT,
+  embedding    FLOAT[],             -- DuckDB; in SQLite store as a BLOB/JSON instead
+  content_hash TEXT                 -- concept hash at embed time (enables incremental re-embed)
 );

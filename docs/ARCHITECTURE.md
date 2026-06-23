@@ -41,8 +41,22 @@ none re-parses the bundle:
 | Layer | Function | Reads | Output |
 |-------|----------|-------|--------|
 | Semantic | `okf_rag` / `rag` | `okf_chunk` (embeddings) | top-k chunks |
-| Graph | `okf_context` / `context` | `okf_concept` + `okf_link` | index-first markdown blob for an LLM |
-| Render | `okf_html` / `render_html` | `okf_concept` + `okf_validation` | static HTML (site or single file) |
+| Context | `okf_context` / `context` | `okf_concept` + `okf_link` | index-first markdown blob for an LLM |
+| Render | `okf_html` / `render_html` | `okf_concept` + `okf_validation` + `okf_link` | static HTML (site or single file) |
+| Graph | `okf_graph_html` / `okf_graph_json` / `okf_backlinks` / `okf_impact` / `okf_clusters` | `okf_concept` + `okf_link` | force-directed page · `{nodes,edges}` JSON · backlinks · ripple · communities |
+
+All **deterministic** — no LLM, no model calls. Community detection is
+synchronous label propagation with lexicographic tie-breaking (reproducible);
+the graph page colours by OKF `type` with community as the fallback. This is the
+deliberate line vs. LLM-agent "understand my wiki" tools: okf surfaces the graph
+the human authored and hands it to *your* LLM via `context`/`rag` — it does not
+generate summaries, entities, or claims itself.
+
+**Incremental.** `okf_chunk` carries each concept's `content_hash`, and
+`okf_concept` rows are keyed by `(bundle_id, path)`. `ingest --incremental` and
+`embed --incremental` diff those hashes against the prior catalog and touch only
+what changed; links and validation are always recomputed (cheap, graph-global).
+A full `ingest` is an idempotent replace of the bundle's rows.
 
 `okf_html` is deliberately the thinnest of the three: it rewrites internal `.md`
 links to page-relative `.html` (site) or `#anchors` (single), wraps each concept
@@ -77,5 +91,7 @@ R; the `okf-ingest[html]` extra in Python). Link resolution reuses
 - ~~`okf_chunk` embeddings + vector search~~ — shipped (`embed` / `rag`).
 - ~~An `okf` CLI in both languages~~ — shipped (`validate`/`ingest`/`query`/`context`/`html`/`embed`/`rag`).
 - ~~git / tar / zip bundle readers~~ — shipped (`okf_fetch`).
-- HTML render polish: optional client-side search, sidebar/backlink nav,
-  theme palettes (current `html` is intentionally minimal: no JS, inline CSS).
+- ~~Interactive graph view + community clustering + backlinks + incremental~~ —
+  shipped (`graph`/`export`/`impact`, `okf_clusters`, `--incremental`).
+- HTML render polish: optional sidebar nav, theme palettes (the `html` page
+  itself stays minimal: no JS, inline CSS).

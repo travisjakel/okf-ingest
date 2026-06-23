@@ -35,6 +35,12 @@ jobs:
           okf html conformance/bundles/store --single /tmp/bundle.html
           test -f /tmp/site/index.html && test -f /tmp/site/metrics/revenue.html && test -f /tmp/bundle.html
           grep -q 'href="../orders.html"' /tmp/site/metrics/revenue.html
+          grep -q 'Linked from:' /tmp/site/orders.html
+          okf graph conformance/bundles/store --out /tmp/graph.html && test -f /tmp/graph.html
+          okf export conformance/bundles/store | python -c "import sys,json; d=json.load(sys.stdin); assert d['nodes'] and d['edges']"
+          okf impact conformance/bundles/store orders.md | grep -q 'inbound'
+          okf ingest conformance/bundles/store --db /tmp/inc.duckdb >/dev/null
+          okf ingest conformance/bundles/store --db /tmp/inc.duckdb --incremental --json | grep -q '"cached"'
 
   R-CMD-check:
     name: R CMD check (${{ matrix.os }})
@@ -61,9 +67,14 @@ jobs:
       - name: Conformance suite (R)
         run: Rscript conformance/check_r.R
         shell: bash
-      - name: html render smoke (R)
+      - name: html + graph smoke (R)
         run: |
           Rscript r/okf/bin/okf.R html conformance/bundles/store --out site_r
           test -f site_r/index.html && test -f site_r/metrics/revenue.html
           grep -q 'href="../orders.html"' site_r/metrics/revenue.html
+          grep -q 'Linked from:' site_r/orders.html
+          Rscript r/okf/bin/okf.R graph conformance/bundles/store --out graph_r.html && test -f graph_r.html
+          Rscript r/okf/bin/okf.R impact conformance/bundles/store orders.md | grep -q inbound
+          Rscript r/okf/bin/okf.R ingest conformance/bundles/store --db inc_r.duckdb >/dev/null
+          Rscript r/okf/bin/okf.R ingest conformance/bundles/store --db inc_r.duckdb --incremental | grep -q incremental
         shell: bash

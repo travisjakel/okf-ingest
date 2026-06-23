@@ -3,12 +3,15 @@
 # okf — command-line interface (R). Mirrors py/okf/cli.py.
 #
 #   okf validate <bundle> [--strict] [--json]
-#   okf ingest   <bundle|git-url|tar/zip> --db <path> [--id <id>] [--subdir <p>] [--branch <b>] [--json]
+#   okf ingest   <bundle|git-url|tar/zip> --db <path> [--id <id>] [--subdir <p>] [--branch <b>] [--incremental] [--json]
 #   okf query    <db> [--sql "SELECT ..."] [--search <term>]
 #                     [--concepts] [--links] [--findings] [--json]
 #   okf context  <bundle|db> [--start <path>] [--depth N] [--max-tokens N] [--no-index]
 #   okf html     <bundle|db> --out <dir> | --single <file.html> [--title T]
-#   okf embed    <db> [--model nomic-embed-text] [--json]
+#   okf graph    <bundle|db> --out <file.html> [--title T]
+#   okf export   <bundle|db> [--json]                 # portable {nodes, edges} graph JSON
+#   okf impact   <bundle|db> <concept>  [--json]      # inbound / outbound / transitive
+#   okf embed    <db> [--model nomic-embed-text] [--incremental] [--json]
 #   okf rag      <db> --query "..." [-k 5] [--model nomic-embed-text] [--json]
 #
 # Exit codes: 0 ok · 1 conformance failure (errors, or warnings under --strict)
@@ -21,7 +24,7 @@ if (requireNamespace("okf", quietly = TRUE)) {
   suppressPackageStartupMessages(library(okf))           # installed package
 } else if (length(self) && nzchar(self)) {
   rdir <- file.path(normalizePath(file.path(dirname(self), ".."), mustWork = FALSE), "R")
-  for (f in c("okf.R", "okf_html.R")) source(file.path(rdir, f))  # dev fallback
+  for (f in c("okf.R", "okf_html.R", "okf_graph.R")) source(file.path(rdir, f))  # dev fallback
 } else stop("okf is not installed and the dev source could not be located")
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -69,7 +72,8 @@ if (cmd == "validate") {
   if (is.na(pos)) usage()
   db <- optval("--db", ":memory:")
   res <- okf_ingest(pos, db_path = db, bundle_id = optval("--id"),
-                    subdir = optval("--subdir"), branch = optval("--branch"))
+                    subdir = optval("--subdir"), branch = optval("--branch"),
+                    incremental = flag("--incremental"))
   DBI::dbDisconnect(res$con, shutdown = TRUE)
   if (out_json) emit(c(list(bundle = pos, db = db, bundle_id = res$bundle_id), res$summary))
   else {
@@ -77,6 +81,8 @@ if (cmd == "validate") {
     cat(sprintf("ingested %s -> %s\n  bundle_id=%s\n  concepts=%d conformant=%d (%s) errors=%d warnings=%d links=%d broken=%d\n",
                 pos, db, res$bundle_id, s$n_concepts, s$n_conformant, s$conformant,
                 s$errors, s$warnings, s$links_total, s$links_broken))
+    if (!is.null(s$changed)) cat(sprintf("  incremental: changed=%d added=%d removed=%d cached=%d\n",
+                                         s$changed, s$added, s$removed, s$cached))
   }
   quit(status = if (res$summary$conformant) 0 else 1)
 
@@ -127,11 +133,46 @@ if (cmd == "validate") {
   if (out_json) emit(list(mode = r$mode, n_concepts = r$n_concepts, files = r$files))
   quit(status = 0)
 
+} else if (cmd == "graph") {
+  if (is.na(pos)) usage()
+  out <- optval("--out"); if (is.null(out)) { cat("graph: need --out <file.html>\n"); quit(status = 2) }
+  if (grepl("\\.duckdb$", pos) && file.exists(pos)) {
+    con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = TRUE)
+  } else { res <- okf_ingest(pos, subdir = optval("--subdir"), branch = optval("--branch")); con <- res$con }
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  okf_graph_html(con, out, site_title = optval("--title"))
+  quit(status = 0)
+
+} else if (cmd == "export") {
+  if (is.na(pos)) usage()
+  if (grepl("\\.duckdb$", pos) && file.exists(pos)) {
+    con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = TRUE)
+  } else { res <- okf_ingest(pos, subdir = optval("--subdir"), branch = optval("--branch")); con <- res$con }
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  cat(okf_graph_json(con, pretty = TRUE), "\n")
+  quit(status = 0)
+
+} else if (cmd == "impact") {
+  if (is.na(pos) || is.na(args[3])) { cat("impact: usage: okf impact <bundle|db> <concept>\n"); quit(status = 2) }
+  concept <- args[3]
+  if (grepl("\\.duckdb$", pos) && file.exists(pos)) {
+    con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = TRUE)
+  } else { res <- okf_ingest(pos, subdir = optval("--subdir"), branch = optval("--branch")); con <- res$con }
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  im <- okf_impact(con, concept)
+  if (out_json) emit(im)
+  else cat(sprintf("impact of %s\n  outbound (%d): %s\n  inbound (%d): %s\n  transitive (%d): %s\n",
+                   concept, length(im$outbound), paste(im$outbound, collapse = ", "),
+                   length(im$inbound), paste(im$inbound, collapse = ", "),
+                   length(im$transitive), paste(im$transitive, collapse = ", ")))
+  quit(status = 0)
+
 } else if (cmd == "embed") {
   if (is.na(pos)) usage()
   con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = FALSE)
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
-  n <- okf_embed(con, embedder = okf_ollama_embedder(optval("--model", "nomic-embed-text")))
+  n <- okf_embed(con, embedder = okf_ollama_embedder(optval("--model", "nomic-embed-text")),
+                 incremental = flag("--incremental"))
   if (out_json) emit(list(db = pos, chunks = n)) else cat(sprintf("embedded %d chunks into %s\n", n, pos))
   quit(status = 0)
 
