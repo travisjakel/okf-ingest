@@ -14,9 +14,11 @@ A data.frame of changes (`path`, `kind`, `before`, `after`); zero rows
   if nothing was safely fixable.
 }
 \description{
-Two mechanical, deterministic repairs (never invents content): a parseable
-non-ISO `timestamp:` is rewritten to ISO-8601; and a broken link whose
-basename matches *exactly one* concept is re-pointed to that concept
-(relative to the linking file). Edits files in place. Anything ambiguous is
-left for [okf_doctor()] to report.
+Two mechanical, deterministic repairs (never invents content):
+\itemize{
+  \item **timestamps** -- a parseable non-ISO `timestamp:` is rewritten to ISO-8601.
+  \item **moved links** -- a broken link whose basename matches *exactly one*
+    concept is re-pointed to that concept (relative to the linking file).
+}
+Edits files in place. Anything ambiguous is left for [okf_doctor()] to report.
 }

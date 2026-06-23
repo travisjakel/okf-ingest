@@ -11,7 +11,8 @@ okf_ingest(
   bundle_id = NULL,
   source_kind = "dir",
   subdir = NULL,
-  branch = NULL
+  branch = NULL,
+  incremental = FALSE
 )
 }
 \arguments{
@@ -31,6 +32,12 @@ fetched sources.}
 \item{subdir}{Optional bundle path within a cloned/extracted source.}
 
 \item{branch}{Optional git branch or tag (git sources only).}
+
+\item{incremental}{Only rewrite concepts whose `content_hash` changed since a
+prior ingest of the same bundle into `db_path` (added/removed handled too);
+links and validation are always recomputed (they are graph-global). Falls
+back to a full load if the bundle is not already present. The `summary`
+then includes `changed`/`added`/`removed`/`cached` counts.}
 }
 \value{
 A list with the open `con`, the `bundle_id`, and a `summary`

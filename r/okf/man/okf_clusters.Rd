@@ -4,12 +4,15 @@
 \alias{okf_clusters}
 \title{Deterministic community labels via synchronous label propagation.}
 \usage{
-okf_clusters(con, max_iter = 50L)
+okf_clusters(con, max_iter = 50L, include_reserved = FALSE)
 }
 \arguments{
 \item{con}{An open DuckDB connection to an okf catalog.}
 
 \item{max_iter}{Maximum propagation sweeps.}
+
+\item{include_reserved}{Include reserved concepts (`index.md`/`log.md`) as
+nodes -- useful for graph visualization, where `index.md` is the hub.}
 }
 \value{
 A data.frame with `path` and integer `cluster` (1-based, stable order).

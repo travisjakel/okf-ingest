@@ -37,3 +37,6 @@ _render/
 # OS
 .DS_Store
 Thumbs.db
+
+# R CMD check output
+okf.Rcheck/

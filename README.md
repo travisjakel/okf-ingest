@@ -124,7 +124,7 @@ okf_rag(res$con, "how is revenue computed?", k = 3)[, c("path", "title", "score"
 **Python / CLI** — from [PyPI](https://pypi.org/project/okf-ingest/):
 
 ```bash
-pip install okf-ingest
+pip install okf-ingest        # or: uv pip install okf-ingest  ·  uv add okf-ingest
 
 okf ingest ./my-bundle --db kb.duckdb      # dir, git URL, or tar/zip
 okf embed  kb.duckdb

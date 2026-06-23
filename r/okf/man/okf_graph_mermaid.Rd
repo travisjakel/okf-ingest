@@ -2,7 +2,7 @@
 % Please edit documentation in R/okf_graph.R
 \name{okf_graph_mermaid}
 \alias{okf_graph_mermaid}
-\title{Render the concept graph as a Mermaid \code{graph LR} diagram.}
+\title{Render the concept graph as a Mermaid `graph LR` diagram.}
 \usage{
 okf_graph_mermaid(con)
 }

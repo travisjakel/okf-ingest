@@ -4,7 +4,7 @@
 \alias{okf_embed}
 \title{Chunk and embed concept bodies into the catalog for semantic search.}
 \usage{
-okf_embed(con, embedder = NULL, target_chars = 600L)
+okf_embed(con, embedder = NULL, target_chars = 600L, incremental = FALSE)
 }
 \arguments{
 \item{con}{An open DuckDB connection to an okf catalog.}
@@ -12,11 +12,16 @@ okf_embed(con, embedder = NULL, target_chars = 600L)
 \item{embedder}{An embedder function; defaults to [okf_ollama_embedder()].}
 
 \item{target_chars}{Approximate chunk size in characters.}
+
+\item{incremental}{Re-embed only concepts whose content changed.}
 }
 \value{
-The number of chunks written (invisibly usable as an integer).
+The number of chunks (re)written this call (invisibly usable as an integer).
 }
 \description{
-Idempotent: replaces any existing chunks. Populates `okf_chunk` with one row
-per chunk plus its embedding vector.
+Populates `okf_chunk` with one row per chunk plus its embedding vector and
+the concept's `content_hash`. By default replaces all chunks. With
+`incremental = TRUE`, only concepts whose `content_hash` differs from what was
+last embedded are re-embedded (and removed concepts' chunks are dropped) --
+the expensive embedder calls are skipped for unchanged concepts.
 }
