@@ -8,6 +8,29 @@ A unified, open-source **ingestion tool for [Open Knowledge Format](https://gith
 
 OKF (Google Cloud, v0.1) is a directory of markdown files with YAML frontmatter — one concept per file, markdown links as a graph. Validators and parsers already exist (Node, a web tool, a pure-Rust crate). **What no other tool does — and what this one is for — is load a bundle into a SQL-queryable DuckDB catalog with built-in semantic search (RAG), and do it from R or Python** (there was no R or Python OKF tooling at all). See [Related tools](#related-tools).
 
+## Do you actually need this?
+
+Often you don't — by design. OKF bundles are meant to be read *directly* by an
+agent: load `index.md`, follow the curated links, pull the few relevant concept
+files into context. For a small, well-linked bundle (dozens to low-hundreds of
+concepts), that index-first traversal is the intended pattern — cf. Karpathy's
+"LLM wiki"; Google's own framing is that OKF **complements** RAG, it doesn't
+require it. No catalog, no embeddings, no okf-ingest — just let the agent
+navigate the markdown.
+
+Reach for okf-ingest when direct reading isn't enough:
+
+- **Programmatic / SQL access** (any size) — query concepts, the link graph, or
+  conformance findings from code or CI, in R or Python. → the DuckDB catalog.
+- **Large bundles** — thousands of concepts, where loading the index or the whole
+  bundle into context isn't practical.
+- **Semantic / cross-corpus retrieval** — feeding OKF into a wider RAG pipeline,
+  or similarity search over a big/heterogeneous knowledge base. → the optional
+  `embed`/`rag` layer.
+
+For small curated bundles, **skip `embed`/`rag`** — the explicit graph the author
+wrote beats fuzzy vector matches, and following links costs nothing.
+
 ## Quickstart
 
 One tool, two bindings — use whichever you live in.
@@ -93,6 +116,10 @@ okf.search(con, "revenue")
 Both produce the same `okf_bundle / okf_concept / okf_link / okf_validation` tables.
 
 ### Semantic search (RAG)
+
+> Optional, and overkill for small curated bundles — see
+> [Do you actually need this?](#do-you-actually-need-this). It pays off for large
+> or cross-corpus knowledge bases, not a hand-linked folder of a few dozen concepts.
 
 `embed` chunks concept bodies (paragraph-merged to ~600 chars), embeds each via
 a **pluggable embedder** (default: local Ollama `nomic-embed-text`, 768-dim;
