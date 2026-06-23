@@ -1,6 +1,6 @@
 Package: okf
 Title: Open Knowledge Format (OKF) Ingestion
-Version: 0.2.0
+Version: 0.3.0
 Authors@R:
     person("Travis", "Jakel", email = "travis.s.jakel@gmail.com", role = c("aut", "cre"))
 Description: Read, validate, and load Open Knowledge Format (OKF) bundles (a
@@ -19,5 +19,6 @@ Imports:
     jsonlite,
     utils
 Suggests:
-    httr2
+    httr2,
+    commonmark
 RoxygenNote: 7.3.2

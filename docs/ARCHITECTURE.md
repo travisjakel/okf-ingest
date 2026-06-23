@@ -29,8 +29,28 @@ bundle dir ─▶ read ─▶ parse frontmatter (YAML)         ─┐
                       resolve links (abs / rel / extern)│
               ─▶ validate (OKF §6 hard rules + soft)    ├─▶ DuckDB catalog
               ─▶ ingest:  okf_bundle / okf_concept /     │   (okf_*) ─▶ query / RAG
-                          okf_link / okf_validation     ─┘
+                          okf_link / okf_validation     ─┘            ─▶ context (LLM blob)
+                                                                      ─▶ html (render for viewing)
 ```
+
+## Consume layers (all read the same catalog)
+
+The catalog has three consume paths, each a thin reader over the `okf_*` tables —
+none re-parses the bundle:
+
+| Layer | Function | Reads | Output |
+|-------|----------|-------|--------|
+| Semantic | `okf_rag` / `rag` | `okf_chunk` (embeddings) | top-k chunks |
+| Graph | `okf_context` / `context` | `okf_concept` + `okf_link` | index-first markdown blob for an LLM |
+| Render | `okf_html` / `render_html` | `okf_concept` + `okf_validation` | static HTML (site or single file) |
+
+`okf_html` is deliberately the thinnest of the three: it rewrites internal `.md`
+links to page-relative `.html` (site) or `#anchors` (single), wraps each concept
+in a metadata bar + validation-derived footer badge, and inlines one CSS string
+(mirrored across bindings like `OKF_SCHEMA`). No JS, no build step — the only new
+dependency is a markdown engine, optional and guarded (`commonmark` Suggests in
+R; the `okf-ingest[html]` extra in Python). Link resolution reuses
+`okf_resolve_link`, so the rendered graph matches the validated graph exactly.
 
 ## Parity notes (where the two languages had to be aligned)
 
@@ -54,7 +74,8 @@ bundle dir ─▶ read ─▶ parse frontmatter (YAML)         ─┐
 
 ## Roadmap
 
-- `okf_chunk` embeddings + vector search (DuckDB-vss / sqlite-vec) — the
-  "+queryable index" RAG layer.
-- An `okf` CLI (`validate` / `ingest` / `query`) in both languages.
-- git / tar / zip bundle readers (currently `dir`); `source_kind` already in the schema.
+- ~~`okf_chunk` embeddings + vector search~~ — shipped (`embed` / `rag`).
+- ~~An `okf` CLI in both languages~~ — shipped (`validate`/`ingest`/`query`/`context`/`html`/`embed`/`rag`).
+- ~~git / tar / zip bundle readers~~ — shipped (`okf_fetch`).
+- HTML render polish: optional client-side search, sidebar/backlink nav,
+  theme palettes (current `html` is intentionally minimal: no JS, inline CSS).

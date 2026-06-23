@@ -23,6 +23,17 @@ src/*.dll
 *.sqlite
 /_state/
 
+# Rendered HTML output (the package ships the renderer, never rendered content).
+# `okf html` emits .html — never commit it. The repo has no .html source of its own.
+*.html
+site/
+*_html/
+_render/
+
+# Built package artifacts
+*.tar.gz
+*.whl
+
 # OS
 .DS_Store
 Thumbs.db

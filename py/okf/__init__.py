@@ -4,6 +4,8 @@ from .okf import read_bundle, validate, links, ingest, search, fetch, context, B
 # submodule (i.e. `import okf.rag` keeps returning the module, not this fn).
 from .rag import chunk_body, ollama_embedder, embed
 from .rag import rag as rag_search
+from .html import render_html
 
 __all__ = ["read_bundle", "validate", "links", "ingest", "search", "fetch", "context",
-           "Bundle", "Concept", "chunk_body", "ollama_embedder", "embed", "rag_search"]
+           "Bundle", "Concept", "chunk_body", "ollama_embedder", "embed", "rag_search",
+           "render_html"]

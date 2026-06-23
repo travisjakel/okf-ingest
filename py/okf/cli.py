@@ -4,6 +4,7 @@
   okf validate <bundle> [--strict] [--json]
   okf ingest   <bundle> --db <path> [--id <id>] [--json]
   okf query    <db> [--sql "..."] [--search <term>] [--concepts] [--links] [--findings] [--json]
+  okf html     <bundle|db> --out <dir> | --single <file.html> [--title T]
 
 Exit codes: 0 ok · 1 conformance failure · 2 usage error.
 """
@@ -48,6 +49,11 @@ def main(argv=None):
     c.add_argument("--max-tokens", type=int, default=8000, dest="max_tokens")
     c.add_argument("--no-index", action="store_true")
     c.add_argument("--subdir"); c.add_argument("--branch")
+
+    h = sub.add_parser("html"); h.add_argument("source")
+    h.add_argument("--out"); h.add_argument("--single")
+    h.add_argument("--title"); h.add_argument("--subdir"); h.add_argument("--branch")
+    h.add_argument("--json", action="store_true")
 
     e = sub.add_parser("embed"); e.add_argument("db")
     e.add_argument("--model", default="nomic-embed-text"); e.add_argument("--json", action="store_true")
@@ -121,6 +127,24 @@ def main(argv=None):
         sys.stdout.write(ctx["text"])
         sys.stderr.write(f"\n<!-- okf context: {len(ctx['included'])} concepts, "
                          f"~{ctx['est_tokens']} tokens, {len(ctx['omitted'])} omitted -->\n")
+        return 0
+
+    if a.cmd == "html":
+        from okf.html import render_html
+        if a.source.endswith(".duckdb") and os.path.isfile(a.source):
+            con = duckdb.connect(a.source, read_only=True)
+        else:
+            con, _ = okf.ingest(a.source, subdir=a.subdir, branch=a.branch)
+        single = a.single is not None
+        out = a.single if single else a.out
+        if not out:
+            print("html: need --out <dir> or --single <file.html>"); con.close(); return 2
+        try:
+            r = render_html(con, out, single=single, site_title=a.title)
+        finally:
+            con.close()
+        if a.json:
+            print(json.dumps(r, indent=2))
         return 0
 
     if a.cmd == "embed":

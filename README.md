@@ -96,6 +96,10 @@ install.packages("okf")
 R CMD INSTALL r/okf         # (or: remotes::install_local("r/okf"))
 ```
 
+Optional extras: `pip install okf-ingest[html]` (or R `install.packages("commonmark")`)
+adds the markdown engine for `okf html`; embeddings/`rag` use a local Ollama
+server (no extra Python dep; R uses the `httr2` Suggests).
+
 Both bindings can also be used without installing (dev mode): `source("r/okf/R/okf.R")`
 in R, or `PYTHONPATH=py python -m okf …` for the Python CLI.
 
@@ -144,6 +148,7 @@ okf validate <bundle> [--strict] [--json]      # lint; exit 1 on errors (or warn
 okf ingest   <source> --db catalog.duckdb [--subdir <p>] [--branch <b>] [--json]
 okf query    catalog.duckdb [--sql "…"] [--search <term>] [--concepts|--links|--findings] [--json]
 okf context  <bundle|catalog> [--start <concept>] [--depth N] [--max-tokens N]  # LLM-wiki context blob
+okf html     <bundle|catalog> --out <dir> | --single <file.html> [--title T]    # render for viewing
 okf embed    catalog.duckdb [--model nomic-embed-text]      # chunk + embed bodies for semantic search
 okf rag      catalog.duckdb --query "…" [-k 5] [--model …]  # top-k semantic matches
 ```
@@ -162,6 +167,26 @@ okf context ./my-bundle --start orders.md --depth 1 --max-tokens 8000 > ctx.md
 ```
 
 It accepts a bundle directly (dir/git/tar/zip) or an ingested `.duckdb` catalog.
+
+### `html` — render a bundle for viewing
+
+`html` is a thin "render for viewing" layer: turn a bundle into browsable HTML
+with **no build step, no JavaScript, inline CSS** — copy the output anywhere and
+open it. Two modes:
+
+```bash
+okf html ./my-bundle --out site/            # navigable site: one .html per concept + index.html
+okf html ./my-bundle --single bundle.html   # one self-contained file (concepts become anchored sections)
+```
+
+Internal `.md` links are rewritten to **page-relative** `.html` (site) or
+in-page `#anchors` (single), so the result works straight off the filesystem
+(`file://`) however the source wrote its links. Each page gets a metadata bar
+(type / status / timestamp / tags) and a footer badge that surfaces broken or
+orphan links from `validate`. Bodies render via a thin markdown engine
+(R `commonmark`, a Suggests dep; Python `markdown` via the `okf-ingest[html]`
+extra). Like `context`, it accepts a bundle (dir/git/tar/zip) or a `.duckdb`
+catalog.
 
 A `<source>` is a local directory, a **git URL** (github/gitlab/bitbucket, `.git`,
 or `git@`), or a **tar/zip archive** (local path or `http(s)` URL). Remote sources

@@ -7,6 +7,7 @@
 #   okf query    <db> [--sql "SELECT ..."] [--search <term>]
 #                     [--concepts] [--links] [--findings] [--json]
 #   okf context  <bundle|db> [--start <path>] [--depth N] [--max-tokens N] [--no-index]
+#   okf html     <bundle|db> --out <dir> | --single <file.html> [--title T]
 #   okf embed    <db> [--model nomic-embed-text] [--json]
 #   okf rag      <db> --query "..." [-k 5] [--model nomic-embed-text] [--json]
 #
@@ -19,8 +20,8 @@ self <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
 if (requireNamespace("okf", quietly = TRUE)) {
   suppressPackageStartupMessages(library(okf))           # installed package
 } else if (length(self) && nzchar(self)) {
-  source(file.path(normalizePath(file.path(dirname(self), ".."), mustWork = FALSE),
-                   "R", "okf.R"))                         # dev fallback
+  rdir <- file.path(normalizePath(file.path(dirname(self), ".."), mustWork = FALSE), "R")
+  for (f in c("okf.R", "okf_html.R")) source(file.path(rdir, f))  # dev fallback
 } else stop("okf is not installed and the dev source could not be located")
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -107,6 +108,23 @@ if (cmd == "validate") {
   cat(ctx$text)
   cat(sprintf("\n<!-- okf context: %d concepts, ~%d tokens, %d omitted -->\n",
               length(ctx$included), ctx$est_tokens, length(ctx$omitted)), file = stderr())
+  quit(status = 0)
+
+} else if (cmd == "html") {
+  if (is.na(pos)) usage()
+  single_out <- optval("--single")
+  if (grepl("\\.duckdb$", pos) && file.exists(pos)) {
+    con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = TRUE)
+  } else {
+    res <- okf_ingest(pos, subdir = optval("--subdir"), branch = optval("--branch"))
+    con <- res$con
+  }
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  single <- !is.null(single_out)
+  out <- if (single) single_out else optval("--out")
+  if (is.null(out)) { cat("html: need --out <dir> or --single <file.html>\n"); quit(status = 2) }
+  r <- okf_html(con, out, single = single, site_title = optval("--title"))
+  if (out_json) emit(list(mode = r$mode, n_concepts = r$n_concepts, files = r$files))
   quit(status = 0)
 
 } else if (cmd == "embed") {

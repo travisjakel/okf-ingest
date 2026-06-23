@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package
-        run: pip install ./py
+        run: pip install ./py[html]
       - name: Conformance suite (Python)
         run: python conformance/check_py.py
       - name: CLI smoke
@@ -31,6 +31,10 @@ jobs:
           okf validate conformance/bundles/store
           okf ingest conformance/bundles/store --db /tmp/kb.duckdb
           okf query /tmp/kb.duckdb --search revenue
+          okf html conformance/bundles/store --out /tmp/site --json
+          okf html conformance/bundles/store --single /tmp/bundle.html
+          test -f /tmp/site/index.html && test -f /tmp/site/metrics/revenue.html && test -f /tmp/bundle.html
+          grep -q 'href="../orders.html"' /tmp/site/metrics/revenue.html
 
   R-CMD-check:
     name: R CMD check (${{ matrix.os }})
@@ -56,4 +60,10 @@ jobs:
           upload-snapshots: true
       - name: Conformance suite (R)
         run: Rscript conformance/check_r.R
+        shell: bash
+      - name: html render smoke (R)
+        run: |
+          Rscript r/okf/bin/okf.R html conformance/bundles/store --out site_r
+          test -f site_r/index.html && test -f site_r/metrics/revenue.html
+          grep -q 'href="../orders.html"' site_r/metrics/revenue.html
         shell: bash
