@@ -15,9 +15,17 @@ conformant bundle you can ingest, render (`okf html` / `okf graph`), and check
 ## Concepts
 
 - [Determinism & no agents](determinism.md) — the core principle
+- [The OKF format](okf-spec.md) — what a bundle is
 - [The DuckDB catalog](catalog.md) — the interop contract
 - [Conformance & parity](conformance.md) — how R and Python stay identical
+- [The R & Python bindings](bindings.md) — thin, native, mirrored
+- [Sources](sources.md) — dir, git, tar/zip
+- [Validate](validate.md) — the conformance lint
+- [The concept graph](links.md) — links, backlinks, impact
+- [Query](query.md) — SQL and helpers over the catalog
+- [Context](context.md) — the index-first LLM-wiki primitive
 - [CLI](cli.md) — the command surface
+- [Install](install.md) — PyPI, R-universe, dev
 - [Rendering](render.md) — HTML site, interactive graph, Mermaid
 - [Semantic search](search.md) — the optional embed/rag layer
 - [Incremental](incremental.md) — re-ingest/re-embed only what changed

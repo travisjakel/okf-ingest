@@ -243,7 +243,7 @@ function draw(){cx.setTransform(1,0,0,1,0,0);cx.clearRect(0,0,W,H);cx.translate(
  cx.globalAlpha=1;G.nodes.forEach(n=>{let r=4+Math.min(n.deg,10);
   cx.globalAlpha=(match&&!n._m)?0.12:1;cx.beginPath();cx.arc(n.x,n.y,r,0,7);cx.fillStyle=n._col;cx.fill();
   if(n===hot){cx.lineWidth=2/view.k;cx.strokeStyle="#1f2328";cx.stroke();}
-  if(view.k>1.4||n.deg>=12||n._m||n===hot){cx.fillStyle="#1f2328";cx.font=(11/view.k)+"px sans-serif";cx.fillText(n.title,n.x+r+2,n.y+3);}});cx.globalAlpha=1;}
+  if(view.k>1.4||n.deg>=12||G.nodes.length<=40||n._m||n===hot){cx.fillStyle="#1f2328";cx.font=(11/view.k)+"px sans-serif";cx.fillText(n.title,n.x+r+2,n.y+3);}});cx.globalAlpha=1;}
 function loop(){tick();draw();requestAnimationFrame(loop);}loop();
 // world<-screen helpers (canvas sits 44px below the top bar)
 function wx(cxp){return (cxp-view.x)/view.k;}function wy(cyp){return (cyp-44-view.y)/view.k;}
