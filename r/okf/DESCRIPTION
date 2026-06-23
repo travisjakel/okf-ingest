@@ -5,8 +5,10 @@ Authors@R:
     person("Travis", "Jakel", email = "travis.s.jakel@gmail.com", role = c("aut", "cre"))
 Description: Read, validate, and load Open Knowledge Format (OKF) bundles (a
     directory of markdown files with YAML frontmatter) into a portable DuckDB
-    catalog, build the concept graph, and optionally embed concept bodies for
-    semantic search. Conformant and permissive per the OKF v0.1 specification.
+    catalog, build the concept graph, render to HTML, and optionally embed
+    concept bodies for semantic search. Deterministic and agent-free: the same
+    bundle always yields the same catalog, graph, and render, with no LLM calls
+    in the core. Conformant and permissive per the OKF v0.1 specification.
 License: Apache License (>= 2)
 Encoding: UTF-8
 Depends:

@@ -8,6 +8,40 @@ A unified, open-source **ingestion tool for [Open Knowledge Format](https://gith
 
 OKF (Google Cloud, v0.1) is a directory of markdown files with YAML frontmatter — one concept per file, markdown links as a graph. Validators and parsers already exist (Node, a web tool, a pure-Rust crate). **What no other tool does — and what this one is for — is load a bundle into a SQL-queryable DuckDB catalog with built-in semantic search (RAG), and do it from R or Python** (there was no R or Python OKF tooling at all). See [Related tools](#related-tools).
 
+## Deterministic by design — no agents
+
+okf-ingest is **pure, deterministic machinery**: the same bundle in always
+produces the same catalog, the same graph, the same clusters, and the same
+rendered HTML out — byte-for-byte, on any machine, with no network and no API
+key. **There are no LLM agents anywhere in it.** It never asks a model to
+summarize a page, infer a "layer," guess a relationship, or decide anything. It
+reads exactly the structure the author wrote — the frontmatter, the markdown
+links — and surfaces *that*.
+
+This is a deliberate line. A wave of tools will read your knowledge base by
+turning agents loose to summarize and "understand" it; their output is
+non-reproducible, costs tokens, ships your corpus to a model, and quietly
+invents structure. okf-ingest does the opposite — it's the boring, auditable
+substrate underneath:
+
+- **Reproducible** — deterministic enough to assert on in CI; a parity test locks
+  R and Python to byte-identical catalogs. No "re-ran it and got different
+  edges."
+- **Free & offline** — no tokens, no keys, no calls. Parsing, validation, the
+  link graph, community clustering (deterministic label propagation), backlinks,
+  impact, and HTML/graph rendering are all plain code.
+- **Private** — your content never leaves the machine. Nothing is sent anywhere.
+- **Composable with agents, not replaced by them** — when you *do* want an LLM,
+  okf hands it the curated graph to reason over (`okf context`) rather than
+  pretending to be the reasoner. You bring the model; okf brings the ground truth.
+
+**The two honest exceptions**, both opt-in and explicit: the `embed`/`rag` layer
+calls a *local, pluggable* embedding model (default Ollama — swap in your own) to
+add vector search; and `ingested_at` is a wall-clock metadata field you can
+override (the conformance suite does, which is how it stays byte-stable). The
+knowledge representation itself — concepts, graph, clusters, render — is 100%
+deterministic and model-free.
+
 ## Do you actually need this?
 
 Often you don't — by design. OKF bundles are meant to be read *directly* by an
