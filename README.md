@@ -29,7 +29,11 @@ Reach for okf-ingest when direct reading isn't enough:
   `embed`/`rag` layer.
 
 For small curated bundles, **skip `embed`/`rag`** — the explicit graph the author
-wrote beats fuzzy vector matches, and following links costs nothing.
+wrote beats fuzzy vector matches, and following links costs nothing. If you want
+tooling *for* that wiki pattern (rather than against it), use
+[`okf context`](#context--the-index-first-no-embeddings-primitive): it assembles
+the index-first, link-following slice for an agent to read directly — no
+embeddings involved.
 
 ## Quickstart
 
@@ -139,9 +143,25 @@ package, or falls back to dev source):
 okf validate <bundle> [--strict] [--json]      # lint; exit 1 on errors (or warnings w/ --strict)
 okf ingest   <source> --db catalog.duckdb [--subdir <p>] [--branch <b>] [--json]
 okf query    catalog.duckdb [--sql "…"] [--search <term>] [--concepts|--links|--findings] [--json]
+okf context  <bundle|catalog> [--start <concept>] [--depth N] [--max-tokens N]  # LLM-wiki context blob
 okf embed    catalog.duckdb [--model nomic-embed-text]      # chunk + embed bodies for semantic search
 okf rag      catalog.duckdb --query "…" [-k 5] [--model …]  # top-k semantic matches
 ```
+
+### `context` — the index-first, no-embeddings primitive
+
+`context` is the faithful OKF / "LLM wiki" consume operation: hand an agent
+`index.md` plus a concept and its **link-neighborhood**, assembled into one
+markdown blob to read directly. It walks the concept graph you already built —
+**no embeddings, no vector search** — and is capped to a token budget. This is
+the on-concept alternative to `rag` for curated bundles:
+
+```bash
+okf context ./my-bundle --start orders.md --depth 1 --max-tokens 8000 > ctx.md
+# emits index.md + orders.md + everything one link away, ready to paste into a prompt
+```
+
+It accepts a bundle directly (dir/git/tar/zip) or an ingested `.duckdb` catalog.
 
 A `<source>` is a local directory, a **git URL** (github/gitlab/bitbucket, `.git`,
 or `git@`), or a **tar/zip archive** (local path or `http(s)` URL). Remote sources

@@ -6,6 +6,7 @@
 #   okf ingest   <bundle|git-url|tar/zip> --db <path> [--id <id>] [--subdir <p>] [--branch <b>] [--json]
 #   okf query    <db> [--sql "SELECT ..."] [--search <term>]
 #                     [--concepts] [--links] [--findings] [--json]
+#   okf context  <bundle|db> [--start <path>] [--depth N] [--max-tokens N] [--no-index]
 #   okf embed    <db> [--model nomic-embed-text] [--json]
 #   okf rag      <db> --query "..." [-k 5] [--model nomic-embed-text] [--json]
 #
@@ -88,6 +89,24 @@ if (cmd == "validate") {
     else if (flag("--findings")) okf_findings(con)
     else okf_concepts(con)
   if (out_json) emit(res) else print(res, row.names = FALSE)
+  quit(status = 0)
+
+} else if (cmd == "context") {
+  if (is.na(pos)) usage()
+  if (grepl("\\.duckdb$", pos) && file.exists(pos)) {
+    con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = TRUE)
+  } else {
+    res <- okf_ingest(pos, subdir = optval("--subdir"), branch = optval("--branch"))
+    con <- res$con
+  }
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  ctx <- okf_context(con, start = optval("--start"),
+                     depth = as.integer(optval("--depth", "1")),
+                     max_tokens = as.integer(optval("--max-tokens", "8000")),
+                     include_index = !flag("--no-index"))
+  cat(ctx$text)
+  cat(sprintf("\n<!-- okf context: %d concepts, ~%d tokens, %d omitted -->\n",
+              length(ctx$included), ctx$est_tokens, length(ctx$omitted)), file = stderr())
   quit(status = 0)
 
 } else if (cmd == "embed") {

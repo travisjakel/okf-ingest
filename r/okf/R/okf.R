@@ -1,5 +1,5 @@
 # ============================================================================
-# okf — Open Knowledge Format ingestion (R reference binding)
+# okf -- Open Knowledge Format ingestion (R reference binding)
 #
 # Reads an OKF v0.1 bundle (a directory of markdown files with YAML
 # frontmatter), validates conformance permissively, builds the concept graph,
@@ -157,7 +157,7 @@ okf_links <- function(rd) {
 #'
 #' Hard rules (severity `error`): parseable frontmatter, non-empty `type`. Soft
 #' findings (severity `warn`): missing recommended fields, non-ISO timestamps,
-#' broken links. Never rejects the bundle — returns findings.
+#' broken links. Never rejects the bundle -- returns findings.
 #'
 #' @param rd A bundle as returned by [okf_read()].
 #' @return A data.frame with `path`, `severity`, `rule`, `message`.
@@ -182,6 +182,13 @@ okf_validate <- function(rd) {
   lk <- okf_links(rd)
   if (nrow(lk)) for (i in which(!lk$resolved))
     add(lk$src_path[i], "warn", "broken_link", paste("unresolved link:", lk$dst_raw[i]))
+  # orphan concepts (Karpathy-style lint): non-reserved, parseable, with no
+  # inbound resolved link from anywhere (including index.md).
+  inbound <- if (nrow(lk)) unique(lk$dst_path[lk$resolved]) else character(0)
+  for (c in rd$concepts) {
+    if (c$reserved || !is.na(c$parse_error)) next
+    if (!(c$path %in% inbound)) add(c$path, "warn", "orphan", "no inbound links (orphan concept)")
+  }
   if (!length(rows)) return(data.frame(path = character(), severity = character(),
     rule = character(), message = character()))
   do.call(rbind, rows)
@@ -428,6 +435,66 @@ okf_embed <- function(con, embedder = NULL, target_chars = 600L) {
     }
   }
   n
+}
+
+#' Assemble an index-first, link-following slice of a bundle as one markdown
+#' blob for direct LLM consumption.
+#'
+#' This is the OKF / "LLM wiki" consume primitive (Karpathy): hand the agent
+#' `index.md` plus the relevant concept(s) and their link-neighborhood to read
+#' directly. It uses the concept graph -- **no embeddings, no vector search**.
+#' With `start`, it walks the (undirected) link graph from that concept to
+#' `depth`; without `start`, it packs all concepts. Output is capped to roughly
+#' `max_tokens` (estimated at ~4 chars/token).
+#'
+#' @param con An open DuckDB connection to an okf catalog.
+#' @param start Optional concept path to center the neighborhood on.
+#' @param depth Link-graph radius around `start` (ignored when `start` is NULL).
+#' @param max_tokens Approximate output budget.
+#' @param include_index Prepend `index.md` (the map) when present.
+#' @return A list with `text` (the markdown blob), `included`/`omitted` concept
+#'   paths, and `est_tokens`.
+#' @export
+okf_context <- function(con, start = NULL, depth = 1L, max_tokens = 8000L, include_index = TRUE) {
+  cps <- DBI::dbGetQuery(con, "SELECT path, reserved, title, body FROM okf_concept")
+  lks <- DBI::dbGetQuery(con, "SELECT src_path, dst_path FROM okf_link WHERE resolved")
+  nonres <- cps$path[!as.logical(cps$reserved)]
+
+  adj <- list()
+  if (nrow(lks)) for (i in seq_len(nrow(lks))) {
+    adj[[lks$src_path[i]]] <- unique(c(adj[[lks$src_path[i]]], lks$dst_path[i]))
+    adj[[lks$dst_path[i]]] <- unique(c(adj[[lks$dst_path[i]]], lks$src_path[i]))
+  }
+
+  if (!is.null(start)) {
+    if (!(start %in% cps$path)) stop("start concept not found: ", start)
+    sel <- start; seen <- start; frontier <- start; d <- 0L
+    while (d < depth && length(frontier)) {
+      nb <- setdiff(unique(unlist(adj[frontier])), seen)
+      sel <- c(sel, nb); seen <- c(seen, nb); frontier <- nb; d <- d + 1L
+    }
+    sel <- sel[sel %in% nonres]
+  } else sel <- sort(nonres)
+
+  est <- function(s) ceiling(nchar(s) / 4)
+  root <- tryCatch(DBI::dbGetQuery(con, "SELECT root FROM okf_bundle LIMIT 1")$root,
+                   error = function(e) "bundle")
+  out <- sprintf("# OKF context -- %s\n", basename(root %||% "bundle"))
+  used <- est(out); inc <- character(0); omit <- character(0)
+  add_sec <- function(label, body) {
+    s <- sprintf("\n## %s\n\n%s\n", label, body %||% "")
+    if (used + est(s) <= max_tokens) { out <<- paste0(out, s); used <<- used + est(s); TRUE } else FALSE
+  }
+  if (include_index) {
+    idx <- cps[cps$path == "index.md", ]
+    if (nrow(idx)) add_sec("index.md", idx$body[1])
+  }
+  for (p in sel) {
+    row <- cps[cps$path == p, ]
+    label <- if (!is.na(row$title[1]) && nzchar(row$title[1])) sprintf("%s (%s)", row$title[1], p) else p
+    if (add_sec(label, row$body[1])) inc <- c(inc, p) else omit <- c(omit, p)
+  }
+  list(text = out, included = inc, omitted = omit, est_tokens = used)
 }
 
 #' Semantic search over an embedded catalog.

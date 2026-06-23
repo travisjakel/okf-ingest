@@ -213,9 +213,17 @@ def validate(b: Bundle) -> list:
             add(c.path, "warn", "missing_timestamp", "recommended field timestamp absent")
         elif not _ISO.match(c.timestamp):
             add(c.path, "warn", "timestamp_not_iso8601", f"timestamp not ISO-8601: {c.timestamp}")
-    for lk in links(b):
+    lk_all = links(b)
+    for lk in lk_all:
         if not lk["resolved"]:
             add(lk["src_path"], "warn", "broken_link", f"unresolved link: {lk['dst_raw']}")
+    # orphan concepts (Karpathy-style lint): non-reserved, parseable, no inbound link
+    inbound = {lk["dst_path"] for lk in lk_all if lk["resolved"]}
+    for c in b.concepts:
+        if c.reserved or c.parse_error is not None:
+            continue
+        if c.path not in inbound:
+            add(c.path, "warn", "orphan", "no inbound links (orphan concept)")
     return out
 
 
@@ -362,3 +370,55 @@ def search(con, term: str):
     return con.execute(
         "SELECT path, type, title FROM okf_concept WHERE body ILIKE ? ORDER BY path",
         [f"%{term}%"]).fetchall()
+
+
+def context(con, start=None, depth: int = 1, max_tokens: int = 8000, include_index: bool = True):
+    """Assemble an index-first, link-following slice of a bundle as one markdown
+    blob for direct LLM consumption — the OKF / "LLM wiki" consume primitive.
+    Uses the concept graph (no embeddings, no vector search). With `start`, walks
+    the undirected link graph to `depth`; otherwise packs all concepts. Output is
+    capped to ~`max_tokens` (~4 chars/token). Returns a dict with text/included/
+    omitted/est_tokens."""
+    cps = {p: {"reserved": r, "title": t, "body": b} for p, r, t, b in con.execute(
+        "SELECT path, reserved, title, body FROM okf_concept").fetchall()}
+    adj = {}
+    for s, d in con.execute("SELECT src_path, dst_path FROM okf_link WHERE resolved").fetchall():
+        adj.setdefault(s, set()).add(d)
+        adj.setdefault(d, set()).add(s)
+    nonres = [p for p, v in cps.items() if not v["reserved"]]
+
+    if start is not None:
+        if start not in cps:
+            raise ValueError(f"start concept not found: {start}")
+        sel, seen, frontier, dd = [start], {start}, [start], 0
+        while dd < depth and frontier:
+            nxt = []
+            for p in frontier:
+                for n in adj.get(p, ()):
+                    if n not in seen:
+                        seen.add(n); nxt.append(n)
+            sel += nxt; frontier = nxt; dd += 1
+        sel = [p for p in sel if p in nonres]
+    else:
+        sel = sorted(nonres)
+
+    est = lambda s: -(-len(s) // 4)
+    row = con.execute("SELECT root FROM okf_bundle LIMIT 1").fetchone()
+    root = os.path.basename(row[0]) if row and row[0] else "bundle"
+    out = [f"# OKF context -- {root}\n"]
+    used = est(out[0]); inc = []; omit = []
+
+    def add(label, body):
+        nonlocal used
+        s = f"\n## {label}\n\n{body or ''}\n"
+        if used + est(s) <= max_tokens:
+            out.append(s); used += est(s); return True
+        return False
+
+    if include_index and "index.md" in cps:
+        add("index.md", cps["index.md"]["body"])
+    for p in sel:
+        v = cps[p]
+        label = f'{v["title"]} ({p})' if v["title"] else p
+        (inc if add(label, v["body"]) else omit).append(p)
+    return {"text": "".join(out), "included": inc, "omitted": omit, "est_tokens": used}

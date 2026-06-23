@@ -15,5 +15,5 @@ A data.frame with `path`, `severity`, `rule`, `message`.
 \description{
 Hard rules (severity `error`): parseable frontmatter, non-empty `type`. Soft
 findings (severity `warn`): missing recommended fields, non-ISO timestamps,
-broken links. Never rejects the bundle — returns findings.
+broken links. Never rejects the bundle -- returns findings.
 }

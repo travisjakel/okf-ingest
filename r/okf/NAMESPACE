@@ -2,6 +2,7 @@
 
 export(okf_chunk_body)
 export(okf_concepts)
+export(okf_context)
 export(okf_embed)
 export(okf_extract_links)
 export(okf_fetch)

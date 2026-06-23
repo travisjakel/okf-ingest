@@ -43,6 +43,12 @@ def main(argv=None):
     q.add_argument("--concepts", action="store_true"); q.add_argument("--links", action="store_true")
     q.add_argument("--findings", action="store_true"); q.add_argument("--json", action="store_true")
 
+    c = sub.add_parser("context"); c.add_argument("source")
+    c.add_argument("--start"); c.add_argument("--depth", type=int, default=1)
+    c.add_argument("--max-tokens", type=int, default=8000, dest="max_tokens")
+    c.add_argument("--no-index", action="store_true")
+    c.add_argument("--subdir"); c.add_argument("--branch")
+
     e = sub.add_parser("embed"); e.add_argument("db")
     e.add_argument("--model", default="nomic-embed-text"); e.add_argument("--json", action="store_true")
 
@@ -99,6 +105,22 @@ def main(argv=None):
             _print(cur.fetchall(), cols, a.json)
         finally:
             con.close()
+        return 0
+
+    if a.cmd == "context":
+        # source may be a .duckdb catalog or a bundle (dir/git/tar/zip)
+        if a.source.endswith(".duckdb") and os.path.isfile(a.source):
+            con = duckdb.connect(a.source, read_only=True); close = con.close
+        else:
+            con, _ = okf.ingest(a.source, subdir=a.subdir, branch=a.branch); close = con.close
+        try:
+            ctx = okf.context(con, start=a.start, depth=a.depth,
+                              max_tokens=a.max_tokens, include_index=not a.no_index)
+        finally:
+            close()
+        sys.stdout.write(ctx["text"])
+        sys.stderr.write(f"\n<!-- okf context: {len(ctx['included'])} concepts, "
+                         f"~{ctx['est_tokens']} tokens, {len(ctx['omitted'])} omitted -->\n")
         return 0
 
     if a.cmd == "embed":
