@@ -4,6 +4,7 @@
 [![r-universe](https://travisjakel.r-universe.dev/okf/badges/version)](https://travisjakel.r-universe.dev/okf)
 [![conformance](https://img.shields.io/badge/OKF%20conformance-passing-brightgreen)](#conformance-tests)
 [![deterministic](https://img.shields.io/badge/deterministic-no%20LLM%20agents-blue)](#deterministic-by-design--no-agents)
+[![maintenance](https://img.shields.io/badge/status-stable%20%C2%B7%20lightly%20maintained-green)](#status)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 A unified, open-source **ingestion tool for [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) bundles** — read any OKF bundle, validate its conformance (permissively, per the spec), build the concept graph, and load it into a portable, queryable **DuckDB catalog**. One catalog format, two idiomatic bindings: **R** and **Python**.
@@ -343,12 +344,19 @@ py/okf/                 Python binding
 
 ## Status
 
-The whole consume side is implemented, CLI-wrapped, and conformance-tested in
-both languages over one portable DuckDB catalog: **validate → ingest → query →
-context → render (`html` / `graph` / `export` `--mermaid`) → `impact` → `doctor`
-→ embed → rag**, with `--incremental` ingest/embed and dir/git/tar/zip sources.
-Packaged to [PyPI](https://pypi.org/project/okf-ingest/) and
+**Stable · lightly maintained.** The whole consume side is implemented,
+CLI-wrapped, and conformance-tested in both languages over one portable DuckDB
+catalog: **validate → ingest → query → context → render (`html` / `graph` /
+`export` `--mermaid`) → `impact` → `doctor`→ embed → rag**, with `--incremental`
+ingest/embed and dir/git/tar/zip sources. Packaged to
+[PyPI](https://pypi.org/project/okf-ingest/) and
 [R-universe](https://travisjakel.r-universe.dev/okf).
+
+The feature surface is complete and the conformance contract is locked, so the
+package is **stable** — safe to depend on. It is **lightly maintained**: expect
+fixes for bugs, conformance regressions, and OKF-spec updates, but not a fast
+cadence of new features. Issues and PRs are welcome (see
+[CONTRIBUTING.md](CONTRIBUTING.md)); response times are best-effort.
 
 ## Roadmap
 
