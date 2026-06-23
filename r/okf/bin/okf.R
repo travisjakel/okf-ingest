@@ -9,8 +9,9 @@
 #   okf context  <bundle|db> [--start <path>] [--depth N] [--max-tokens N] [--no-index]
 #   okf html     <bundle|db> --out <dir> | --single <file.html> [--title T]
 #   okf graph    <bundle|db> --out <file.html> [--title T]
-#   okf export   <bundle|db> [--json]                 # portable {nodes, edges} graph JSON
+#   okf export   <bundle|db> [--json] [--mermaid]     # portable {nodes, edges} graph JSON, or a Mermaid diagram
 #   okf impact   <bundle|db> <concept>  [--json]      # inbound / outbound / transitive
+#   okf doctor   <bundle|db> [--strict] [--stale-days N] [--fix] [--json]  # health / maintenance
 #   okf embed    <db> [--model nomic-embed-text] [--incremental] [--json]
 #   okf rag      <db> --query "..." [-k 5] [--model nomic-embed-text] [--json]
 #
@@ -24,7 +25,7 @@ if (requireNamespace("okf", quietly = TRUE)) {
   suppressPackageStartupMessages(library(okf))           # installed package
 } else if (length(self) && nzchar(self)) {
   rdir <- file.path(normalizePath(file.path(dirname(self), ".."), mustWork = FALSE), "R")
-  for (f in c("okf.R", "okf_html.R", "okf_graph.R")) source(file.path(rdir, f))  # dev fallback
+  for (f in c("okf.R", "okf_html.R", "okf_graph.R", "okf_doctor.R")) source(file.path(rdir, f))  # dev fallback
 } else stop("okf is not installed and the dev source could not be located")
 
 args <- commandArgs(trailingOnly = TRUE)
@@ -149,7 +150,7 @@ if (cmd == "validate") {
     con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = TRUE)
   } else { res <- okf_ingest(pos, subdir = optval("--subdir"), branch = optval("--branch")); con <- res$con }
   on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
-  cat(okf_graph_json(con, pretty = TRUE), "\n")
+  if (flag("--mermaid")) cat(okf_graph_mermaid(con), "\n") else cat(okf_graph_json(con, pretty = TRUE), "\n")
   quit(status = 0)
 
 } else if (cmd == "impact") {
@@ -166,6 +167,31 @@ if (cmd == "validate") {
                    length(im$inbound), paste(im$inbound, collapse = ", "),
                    length(im$transitive), paste(im$transitive, collapse = ", ")))
   quit(status = 0)
+
+} else if (cmd == "doctor") {
+  if (is.na(pos)) usage()
+  is_db <- grepl("\\.duckdb$", pos) && file.exists(pos)
+  if (flag("--fix")) {
+    if (is_db) { cat("doctor --fix needs a bundle directory (not a .duckdb catalog)\n"); quit(status = 2) }
+    fx <- okf_doctor_fix(pos)
+    if (nrow(fx)) for (i in seq_len(nrow(fx)))
+      cat(sprintf("  fixed [%s] %s: %s -> %s\n", fx$kind[i], fx$path[i], fx$before[i], fx$after[i]))
+    else cat("  no safely-fixable issues\n")
+  }
+  if (is_db) con <- DBI::dbConnect(duckdb::duckdb(), dbdir = pos, read_only = TRUE)
+  else { res <- okf_ingest(pos, subdir = optval("--subdir"), branch = optval("--branch")); con <- res$con }
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  sd <- optval("--stale-days"); now <- if (!is.null(sd)) format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC") else NULL
+  rep <- okf_doctor(con, now = now, stale_days = if (!is.null(sd)) as.integer(sd) else NULL)
+  if (out_json) emit(rep)
+  else {
+    cat(sprintf("health: %d/100  (%d/%d concepts clean · %d errors · %d warnings)\n",
+                rep$score, rep$n_healthy, rep$n_concepts, rep$n_error, rep$n_warn))
+    if (length(rep$by_rule)) for (r in names(rep$by_rule))
+      cat(sprintf("  %-22s %d\n", r, rep$by_rule[[r]]))
+  }
+  ok <- rep$n_error == 0 && !(flag("--strict") && rep$n_warn > 0)
+  quit(status = if (ok) 0 else 1)
 
 } else if (cmd == "embed") {
   if (is.na(pos)) usage()

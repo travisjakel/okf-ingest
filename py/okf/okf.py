@@ -154,9 +154,12 @@ def resolve_link(raw: str, src_rel: str, known: set) -> Optional[str]:
 def read_bundle(root: str, bundle_id: Optional[str] = None, source_kind: str = "dir") -> Bundle:
     root = os.path.realpath(root).replace("\\", "/")
     files = []
-    for dp, _, fns in os.walk(root):
+    for dp, dns, fns in os.walk(root):
+        # skip hidden directories (.git/.github/.githooks/…) — tooling, not
+        # concepts — to match R's list.files() default (parity).
+        dns[:] = [d for d in dns if not d.startswith(".")]
         for fn in fns:
-            if fn.endswith(".md"):
+            if fn.endswith(".md") and not fn.startswith("."):
                 files.append(os.path.join(dp, fn))
     files.sort()
     concepts = []

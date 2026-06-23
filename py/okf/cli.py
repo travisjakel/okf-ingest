@@ -8,6 +8,7 @@
   okf graph    <bundle|db> --out <file.html> [--title T]
   okf export   <bundle|db> [--json]                 # portable {nodes, edges} graph JSON
   okf impact   <bundle|db> <concept> [--json]       # inbound / outbound / transitive
+  okf doctor   <bundle|db> [--strict] [--stale-days N] [--fix] [--json]  # health / maintenance
 
 Exit codes: 0 ok · 1 conformance failure · 2 usage error.
 """
@@ -63,10 +64,16 @@ def main(argv=None):
     gr.add_argument("--subdir"); gr.add_argument("--branch")
 
     ex = sub.add_parser("export"); ex.add_argument("source")
-    ex.add_argument("--subdir"); ex.add_argument("--branch"); ex.add_argument("--json", action="store_true")
+    ex.add_argument("--subdir"); ex.add_argument("--branch")
+    ex.add_argument("--json", action="store_true"); ex.add_argument("--mermaid", action="store_true")
 
     im = sub.add_parser("impact"); im.add_argument("source"); im.add_argument("concept")
     im.add_argument("--subdir"); im.add_argument("--branch"); im.add_argument("--json", action="store_true")
+
+    dr = sub.add_parser("doctor"); dr.add_argument("source")
+    dr.add_argument("--strict", action="store_true"); dr.add_argument("--fix", action="store_true")
+    dr.add_argument("--stale-days", type=int, default=None, dest="stale_days")
+    dr.add_argument("--subdir"); dr.add_argument("--branch"); dr.add_argument("--json", action="store_true")
 
     e = sub.add_parser("embed"); e.add_argument("db")
     e.add_argument("--model", default="nomic-embed-text")
@@ -182,10 +189,10 @@ def main(argv=None):
         return 0
 
     if a.cmd == "export":
-        from okf.graph import graph_json
+        from okf.graph import graph_json, graph_mermaid
         con = _open(a.source, a.subdir, a.branch)
         try:
-            sys.stdout.write(graph_json(con) + "\n")
+            sys.stdout.write((graph_mermaid(con) if a.mermaid else graph_json(con)) + "\n")
         finally:
             con.close()
         return 0
@@ -204,6 +211,33 @@ def main(argv=None):
             for k in ("outbound", "inbound", "transitive"):
                 print(f"  {k} ({len(im[k])}): {', '.join(im[k])}")
         return 0
+
+    if a.cmd == "doctor":
+        from okf.doctor import doctor, doctor_fix
+        import datetime as _dt
+        is_db = a.source.endswith(".duckdb") and os.path.isfile(a.source)
+        if a.fix:
+            if is_db:
+                print("doctor --fix needs a bundle directory (not a .duckdb catalog)"); return 2
+            ch = doctor_fix(a.source)
+            for c in ch:
+                print(f"  fixed [{c['kind']}] {c['path']}: {c['before']} -> {c['after']}")
+            if not ch:
+                print("  no safely-fixable issues")
+        con = _open(a.source, a.subdir, a.branch)
+        try:
+            now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if a.stale_days else None
+            rep = doctor(con, now=now, stale_days=a.stale_days)
+        finally:
+            con.close()
+        if a.json:
+            print(json.dumps(rep, indent=2))
+        else:
+            print(f"health: {rep['score']}/100  ({rep['n_healthy']}/{rep['n_concepts']} concepts clean "
+                  f"· {rep['n_error']} errors · {rep['n_warn']} warnings)")
+            for r, c in sorted(rep["by_rule"].items()):
+                print(f"  {r:<22} {c}")
+        return 0 if (rep["n_error"] == 0 and not (a.strict and rep["n_warn"] > 0)) else 1
 
     if a.cmd == "embed":
         con = duckdb.connect(a.db)

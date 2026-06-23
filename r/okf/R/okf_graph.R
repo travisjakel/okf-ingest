@@ -142,6 +142,27 @@ okf_graph_json <- function(con, pretty = TRUE) {
   as.character(jsonlite::toJSON(m, auto_unbox = TRUE, pretty = pretty))
 }
 
+#' Render the concept graph as a Mermaid `graph LR` diagram.
+#'
+#' A text diagram for embedding directly in markdown (READMEs, docs, GitHub
+#' renders it natively) -- the lightweight complement to the interactive
+#' [okf_graph_html()]. Node ids are sanitized; labels are the concept titles.
+#'
+#' @param con An open DuckDB connection to an okf catalog.
+#' @return A Mermaid diagram as a single string (a ```` ```mermaid ```` block).
+#' @export
+okf_graph_mermaid <- function(con) {
+  m <- .okf_graph_model(con)
+  ids <- character(0)
+  safe <- function(p) paste0("n", gsub("[^A-Za-z0-9]", "_", p))
+  lab  <- function(s) gsub('"', "'", s, fixed = TRUE)
+  lines <- c("```mermaid", "graph LR")
+  for (n in m$nodes) lines <- c(lines, sprintf('  %s["%s"]', safe(n$id), lab(n$title)))
+  for (e in m$edges) lines <- c(lines, sprintf("  %s --> %s", safe(e$source), safe(e$target)))
+  lines <- c(lines, "```")
+  paste(lines, collapse = "\n")
+}
+
 #' Render the concept graph as one self-contained interactive HTML page.
 #'
 #' A force-directed graph drawn on a `<canvas>` with hand-rolled vanilla JS (no

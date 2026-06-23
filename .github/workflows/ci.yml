@@ -41,6 +41,10 @@ jobs:
           okf impact conformance/bundles/store orders.md | grep -q 'inbound'
           okf ingest conformance/bundles/store --db /tmp/inc.duckdb >/dev/null
           okf ingest conformance/bundles/store --db /tmp/inc.duckdb --incremental --json | grep -q '"cached"'
+          okf export conformance/bundles/store --mermaid | grep -q 'graph LR'
+          okf doctor conformance/bundles/store | grep -q 'health:'
+          okf validate docs/okf-bundle --strict      # dogfood bundle stays conformant
+          okf doctor docs/okf-bundle --strict         # …and healthy (100/100)
 
   R-CMD-check:
     name: R CMD check (${{ matrix.os }})
@@ -77,4 +81,8 @@ jobs:
           Rscript r/okf/bin/okf.R impact conformance/bundles/store orders.md | grep -q inbound
           Rscript r/okf/bin/okf.R ingest conformance/bundles/store --db inc_r.duckdb >/dev/null
           Rscript r/okf/bin/okf.R ingest conformance/bundles/store --db inc_r.duckdb --incremental | grep -q incremental
+          Rscript r/okf/bin/okf.R export conformance/bundles/store --mermaid | grep -q 'graph LR'
+          Rscript r/okf/bin/okf.R doctor conformance/bundles/store | grep -q 'health:'
+          Rscript r/okf/bin/okf.R validate docs/okf-bundle --strict
+          Rscript r/okf/bin/okf.R doctor docs/okf-bundle --strict
         shell: bash

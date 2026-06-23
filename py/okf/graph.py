@@ -125,6 +125,20 @@ def graph_json(con, pretty: bool = True) -> str:
     return json.dumps(_graph_model(con), indent=2 if pretty else None)
 
 
+def graph_mermaid(con) -> str:
+    """Render the concept graph as a Mermaid `graph LR` diagram (a ```mermaid
+    block) for embedding in markdown — the lightweight complement to graph_html.
+    Node ids are sanitized; labels are concept titles."""
+    m = _graph_model(con)
+    safe = lambda p: "n" + re.sub(r"[^A-Za-z0-9]", "_", p)
+    lab = lambda s: s.replace('"', "'")
+    lines = ["```mermaid", "graph LR"]
+    lines += [f'  {safe(n["id"])}["{lab(n["title"])}"]' for n in m["nodes"]]
+    lines += [f'  {safe(e["source"])} --> {safe(e["target"])}' for e in m["edges"]]
+    lines.append("```")
+    return "\n".join(lines)
+
+
 def graph_html(con, out: str, site_title: Optional[str] = None) -> str:
     """Render the concept graph as one self-contained interactive HTML page — a
     force-directed canvas (hand-rolled vanilla JS, no CDN): pan, zoom, drag,

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# okf-ingest pre-commit hook — keep an OKF bundle healthy on every commit.
+#
+# Install:  cp examples/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#   (or point core.hooksPath at a dir containing this file)
+#
+# Requires `okf` on PATH (pip install okf-ingest  — or Rscript path/to/okf.R).
+# Edit BUNDLE to your bundle's location. Exits non-zero (blocking the commit) on
+# conformance errors; with --strict, warnings block too. Deterministic, offline.
+set -euo pipefail
+
+BUNDLE="${OKF_BUNDLE:-.}"     # path to the OKF bundle (default: repo root)
+
+if ! command -v okf >/dev/null 2>&1; then
+  echo "okf not found on PATH — skipping OKF health check (pip install okf-ingest)" >&2
+  exit 0
+fi
+
+echo "okf doctor: checking $BUNDLE …"
+okf doctor "$BUNDLE" --strict

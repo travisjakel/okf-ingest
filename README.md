@@ -2,9 +2,17 @@
 
 [![CI](https://github.com/travisjakel/okf-ingest/actions/workflows/ci.yml/badge.svg)](https://github.com/travisjakel/okf-ingest/actions/workflows/ci.yml)
 [![r-universe](https://travisjakel.r-universe.dev/okf/badges/version)](https://travisjakel.r-universe.dev/okf)
+[![conformance](https://img.shields.io/badge/OKF%20conformance-passing-brightgreen)](#conformance-tests)
+[![deterministic](https://img.shields.io/badge/deterministic-no%20LLM%20agents-blue)](#deterministic-by-design--no-agents)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 A unified, open-source **ingestion tool for [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) bundles** — read any OKF bundle, validate its conformance (permissively, per the spec), build the concept graph, and load it into a portable, queryable **DuckDB catalog**. One catalog format, two idiomatic bindings: **R** and **Python**.
+
+![okf graph of okf-ingest's own documentation bundle](docs/graph.png)
+
+> The image is `okf graph` run on [okf-ingest's own docs](docs/okf-bundle/) — the
+> project dogfoods OKF: that folder is a conformant bundle you can `ingest`,
+> `html`/`graph`, and `doctor` with the tool itself.
 
 OKF (Google Cloud, v0.1) is a directory of markdown files with YAML frontmatter — one concept per file, markdown links as a graph. Validators and parsers already exist (Node, a web tool, a pure-Rust crate). **What no other tool does — and what this one is for — is load a bundle into a SQL-queryable DuckDB catalog with built-in semantic search (RAG), and do it from R or Python** (there was no R or Python OKF tooling at all). See [Related tools](#related-tools).
 
@@ -41,6 +49,30 @@ add vector search; and `ingested_at` is a wall-clock metadata field you can
 override (the conformance suite does, which is how it stays byte-stable). The
 knowledge representation itself — concepts, graph, clusters, render — is 100%
 deterministic and model-free.
+
+| | Wiki / docs site | Vector DB | Agent "understand my wiki" | **okf-ingest** |
+|---|---|---|---|---|
+| Reproducible (same in → same out) | ✅ | ⚠️ re-embed drift | ❌ non-deterministic | ✅ byte-locked |
+| Offline, no API key / tokens | ✅ | ⚠️ | ❌ | ✅ |
+| Content stays local / private | ✅ | ⚠️ | ❌ sent to a model | ✅ |
+| SQL / programmatic access | ❌ | ⚠️ vectors only | ⚠️ | ✅ DuckDB |
+| Explicit concept graph | ⚠️ implicit | ❌ | ✅ inferred | ✅ author-written |
+| Renders to HTML + interactive graph | ⚠️ | ❌ | ✅ | ✅ |
+| Semantic search | ❌ | ✅ | ✅ | ✅ (opt-in) |
+| Invents structure with an LLM | ❌ | ❌ | ✅ | ❌ by design |
+
+### How it fits together
+
+```mermaid
+graph LR
+  B["OKF bundle<br/>(dir · git · tar/zip)"] --> I[ingest]
+  I --> C[(DuckDB catalog<br/>concepts · links · validation · chunks)]
+  C --> CX["context<br/>(LLM-wiki blob)"]
+  C --> H["html<br/>(site / single)"]
+  C --> G["graph / export<br/>(interactive · JSON · Mermaid)"]
+  C --> D["doctor<br/>(health · --fix)"]
+  C --> R["embed / rag<br/>(opt-in, local model)"]
+```
 
 ## Do you actually need RAG?
 
@@ -254,6 +286,26 @@ ones); the JSON summary reports `changed`/`added`/`removed`/`cached`. `embed
 expensive embedder calls for the rest — the right default for large, often-edited
 wikis.
 
+### `doctor` — ongoing health & maintenance
+
+Knowledge bases drift — links break when files move, timestamps go stale,
+concepts orphan. `okf doctor` is a deterministic one-shot health scan with a
+score and CI exit codes:
+
+```bash
+okf doctor ./my-bundle                  # health: 92/100 (broken links, orphans, stale ts, dup titles…)
+okf doctor ./my-bundle --strict         # exit 1 on any warning — drop into CI / a hook
+okf doctor ./my-bundle --stale-days 365 # also flag timestamps older than a year
+okf doctor ./my-bundle --fix            # apply ONLY safe repairs, report each
+```
+
+`--fix` is conservative on purpose — it only normalizes a parseable non-ISO
+`timestamp`, and re-points a broken link when *exactly one* basename matches.
+Anything ambiguous is reported, never guessed (no LLM). Ready-made
+[`examples/pre-commit`](examples/pre-commit) and
+[`examples/github-action.yml`](examples/github-action.yml) wire it into your
+workflow so a bundle can't drift broken.
+
 A `<source>` is a local directory, a **git URL** (github/gitlab/bitbucket, `.git`,
 or `git@`), or a **tar/zip archive** (local path or `http(s)` URL). Remote sources
 are fetched to a temp dir and cleaned up automatically; `--subdir` selects a
@@ -291,11 +343,50 @@ py/okf/                 Python binding
 
 ## Status
 
-Consume → validate → load → query → **embed → RAG** is implemented, CLI-wrapped,
-and conformance-tested in both languages, all over one portable DuckDB catalog
-(embed in either binding, query from the other). Roadmap: git/tar/zip bundle
-readers (`source_kind` is in the schema; only `dir` today) and packaging
-(`pyproject.toml` / R `DESCRIPTION`).
+The whole consume side is implemented, CLI-wrapped, and conformance-tested in
+both languages over one portable DuckDB catalog: **validate → ingest → query →
+context → render (`html` / `graph` / `export` `--mermaid`) → `impact` → `doctor`
+→ embed → rag**, with `--incremental` ingest/embed and dir/git/tar/zip sources.
+Packaged to [PyPI](https://pypi.org/project/okf-ingest/) and
+[R-universe](https://travisjakel.r-universe.dev/okf).
+
+## Roadmap
+
+- **Authoring** (`new` / `add`) — scaffold conformant concepts. Deliberately not
+  done yet; okf-ingest is consume-first (for authoring today, see
+  [`okf-knowledge`](https://github.com/sniperunder123/okf-knowledge)).
+- **`watch`** — re-ingest/render on file change for live editing.
+- **HTML polish** — optional sidebar nav and theme palettes (the page stays
+  no-JS, inline-CSS).
+- More `doctor --fix` classes, as long as they stay unambiguously safe.
+
+## FAQ
+
+**Is anything sent to an LLM?** No — not by the core. The only model calls are
+the opt-in `embed`/`rag` layer, and that's a *local* embedder (Ollama by
+default) you can swap. Parsing, the graph, clusters, rendering, and `doctor` are
+plain deterministic code. See [Deterministic by design](#deterministic-by-design--no-agents).
+
+**R or Python — which catalog do I get?** The same one. Both write byte-identical
+DuckDB catalogs (a parity test enforces it); ingest in one, query from the other.
+
+**Do I need embeddings/RAG?** Usually not for small curated bundles — the graph
+the author wrote beats fuzzy matches, and `okf context` costs nothing. See
+[Do you actually need RAG?](#do-you-actually-need-rag).
+
+**How do I keep a bundle healthy over time?** `okf doctor` (+ the
+[`examples/`](examples/) pre-commit hook / GitHub Action) gates drift in CI;
+`--fix` repairs the unambiguously-safe issues.
+
+**Does it author/edit my knowledge?** No. It reads what you wrote. `doctor --fix`
+makes only mechanical, reported repairs (ISO timestamps, unique-match moved
+links) — never content.
+
+**What's "conformant"?** Parseable frontmatter with a non-empty `type` on every
+non-reserved file. Everything else is a finding, never a rejection.
+
+**Contributing?** See [CONTRIBUTING.md](CONTRIBUTING.md) — new bindings just need
+to reproduce the conformance corpus.
 
 ## Related tools
 
