@@ -136,6 +136,26 @@ okf rag    kb.duckdb --query "how is revenue computed?" -k 5
 The catalog is plain DuckDB — query it with SQL, R, Python, or the bare `duckdb`
 CLI. Ingest/embed in one language, query from the other.
 
+## Use it from an AI agent
+
+okf is deterministic and **composes with your agent** — give the agent the graph,
+let it reason. Drop this into your agent's instructions
+(`AGENTS.md` / `CLAUDE.md` / Cursor rules) so it drives okf instead of grepping:
+
+```
+The docs at <PATH> are an OKF bundle. Use `okf` to navigate them:
+- `okf context <PATH> --start <concept>.md --depth 1` → index.md + that concept +
+  its linked neighbours as one markdown blob. Read that; don't grep files ad hoc.
+- `okf query <PATH> --search "<term>"` (substring) or `--sql "<SELECT…>"` for lookups.
+Start from index.md to see the map.
+```
+
+That's it — one paste and the agent reads the bundle index-first, the way OKF is
+meant to be consumed (`okf` runs locally; no data leaves the machine). For
+semantic instead of substring lookup, ingest once (`okf ingest <PATH> --db kb.duckdb`),
+`okf embed kb.duckdb`, then point the agent at `okf rag kb.duckdb --query "…"`. See
+[`context`](#context--the-index-first-no-embeddings-primitive).
+
 ## Why "core + bindings" without a binary core
 
 The interoperability **core is a contract, not compiled code**:
