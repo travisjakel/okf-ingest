@@ -2,7 +2,7 @@
 % Please edit documentation in R/okf_graph.R
 \name{okf_graph_json}
 \alias{okf_graph_json}
-\title{Export the concept graph as portable JSON (`{nodes, edges}`).}
+\title{Export the concept graph as portable JSON (nodes and edges).}
 \usage{
 okf_graph_json(con, pretty = TRUE)
 }
@@ -15,8 +15,9 @@ okf_graph_json(con, pretty = TRUE)
 A JSON string (invisibly also suitable for writing to a file).
 }
 \description{
-Nodes carry `id` (path), `type`, `title`, `tags`, `cluster` (from
-[okf_clusters()]), and `href` (the rendered `.html` path). Edges are resolved
-links as `{source, target}`. Feeds any external graph visualizer -- the same
+Returns a JSON object with `nodes` and `edges`. Nodes carry `id` (path),
+`type`, `title`, `tags`, `cluster` (from [okf_clusters()]), and `href` (the
+rendered `.html` path). Edges are resolved links with `source` and `target`
+fields. Feeds any external graph visualizer -- the same
 "core is a contract" idea as the DuckDB catalog.
 }

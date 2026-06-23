@@ -126,11 +126,12 @@ okf_clusters <- function(con, max_iter = 50L, include_reserved = FALSE) {
   list(nodes = nodes, edges = edges)
 }
 
-#' Export the concept graph as portable JSON (`{nodes, edges}`).
+#' Export the concept graph as portable JSON (nodes and edges).
 #'
-#' Nodes carry `id` (path), `type`, `title`, `tags`, `cluster` (from
-#' [okf_clusters()]), and `href` (the rendered `.html` path). Edges are resolved
-#' links as `{source, target}`. Feeds any external graph visualizer -- the same
+#' Returns a JSON object with `nodes` and `edges`. Nodes carry `id` (path),
+#' `type`, `title`, `tags`, `cluster` (from [okf_clusters()]), and `href` (the
+#' rendered `.html` path). Edges are resolved links with `source` and `target`
+#' fields. Feeds any external graph visualizer -- the same
 #' "core is a contract" idea as the DuckDB catalog.
 #'
 #' @param con An open DuckDB connection to an okf catalog.
@@ -198,7 +199,7 @@ okf_graph_html <- function(con, out, site_title = NULL) {
 OKF_GRAPH_TEMPLATE <- '<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>__TITLE__ — graph</title>
+<title>__TITLE__ \u2014 graph</title>
 <style>
 :root{--fg:#1f2328;--mut:#656d76;--line:#d0d7de;--bg:#fff}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
@@ -215,20 +216,20 @@ font-size:.8rem;opacity:0;transition:opacity .1s;max-width:340px;z-index:6}
 </style></head><body>
 <div id="bar"><strong>__TITLE__</strong><span class="mut" id="cnt"></span>
 <span id="leg"></span>
-<input id="q" placeholder="search title / tag / path…" autocomplete="off"></div>
+<input id="q" placeholder="search title / tag / path\u2026" autocomplete="off"></div>
 <canvas id="c"></canvas><div id="tip"></div>
 <script>
 const G=__DATA__;
 const PAL=["#0969da","#1a7f37","#9a6700","#cf222e","#8250df","#bf3989","#0550ae","#116329","#953800","#a40e26","#6639ba","#99286e"];
 const cv=document.getElementById("c"),cx=cv.getContext("2d"),tip=document.getElementById("tip"),q=document.getElementById("q");
-document.getElementById("cnt").textContent=G.nodes.length+" nodes · "+G.edges.length+" links";
+document.getElementById("cnt").textContent=G.nodes.length+" nodes \u00b7 "+G.edges.length+" links";
 let W,H;function size(){W=cv.width=innerWidth;H=cv.height=innerHeight-44;}size();addEventListener("resize",size);
 const idx={};G.nodes.forEach((n,i)=>{idx[n.id]=i;n.x=Math.cos(i)*200+W/2;n.y=Math.sin(i*1.7)*200+H/2;n.vx=0;n.vy=0;n.deg=0;});
 // colour by OKF type (semantic, varied); fall back to community cluster
 const keyset=[...new Set(G.nodes.map(n=>n.type||("c"+(n.cluster||0))))].sort();
 const colOf={};keyset.forEach((k,i)=>colOf[k]=PAL[i%PAL.length]);
 G.nodes.forEach(n=>n._col=colOf[n.type||("c"+(n.cluster||0))]);
-document.getElementById("leg").innerHTML=keyset.map(k=>`<span style="color:${colOf[k]}">●</span>${k}`).join(" ");
+document.getElementById("leg").innerHTML=keyset.map(k=>`<span style="color:${colOf[k]}">\u25cf</span>${k}`).join(" ");
 const E=G.edges.filter(e=>idx[e.source]!=null&&idx[e.target]!=null).map(e=>({s:idx[e.source],t:idx[e.target]}));
 E.forEach(e=>{G.nodes[e.s].deg++;G.nodes[e.t].deg++;});
 let view={x:0,y:0,k:1},hot=null,drag=null,match=null;
@@ -257,7 +258,7 @@ addEventListener("mousemove",ev=>{
  if(pan){view.x=ev.clientX-pan.x;view.y=ev.clientY-pan.y;moved=true;return;}
  hot=at(ev.clientX,ev.clientY);
  if(hot){tip.style.opacity=1;tip.style.left=(ev.clientX+12)+"px";tip.style.top=(ev.clientY+12)+"px";
-  tip.textContent=hot.title+(hot.type?" ["+hot.type+"]":"")+" · "+hot.id;}else tip.style.opacity=0;});
+  tip.textContent=hot.title+(hot.type?" ["+hot.type+"]":"")+" \u00b7 "+hot.id;}else tip.style.opacity=0;});
 addEventListener("mouseup",ev=>{
  if(drag&&!moved&&drag.href)location.href=drag.href;
  drag=null;pan=null;});

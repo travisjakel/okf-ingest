@@ -125,7 +125,7 @@ blockquote{margin:1rem 0;padding:.2rem 1rem;border-left:4px solid var(--line);co
   tags <- tryCatch(jsonlite::fromJSON(row$tags), error = function(e) NULL)
   if (length(tags))
     chips <- c(chips, sprintf('<span class="okf-chip">%s</span>',
-                              .okf_esc(paste(as.character(tags), collapse = " · "))))
+                              .okf_esc(paste(as.character(tags), collapse = " \u00b7 "))))
   bar <- if (length(chips)) sprintf('<div class="okf-meta">%s</div>', paste(chips, collapse = "")) else ""
   desc <- if (!is.na(row$description) && nzchar(row$description))
     sprintf('<p class="okf-desc">%s</p>', .okf_esc(row$description)) else ""
@@ -145,7 +145,7 @@ blockquote{margin:1rem 0;padding:.2rem 1rem;border-left:4px solid var(--line);co
   if (!length(srcs)) return("")
   items <- vapply(srcs, function(s) sprintf('<a href="%s">%s</a>',
     .okf_href_for(s, page, single), .okf_esc(titlemap[[s]] %|NA|% s)), "")
-  sprintf('<div class="okf-foot">Linked from: %s</div>', paste(items, collapse = " · "))
+  sprintf('<div class="okf-foot">Linked from: %s</div>', paste(items, collapse = " \u00b7 "))
 }
 
 # Per-page footer badge derived from the validation findings (broken / orphan).
@@ -153,11 +153,11 @@ blockquote{margin:1rem 0;padding:.2rem 1rem;border-left:4px solid var(--line);co
   v <- val[val$path == page, , drop = FALSE]
   nb <- sum(v$rule == "broken_link")
   orph <- any(v$rule == "orphan")
-  if (nb == 0 && !orph) return('<div class="okf-foot">✓ no link issues</div>')
+  if (nb == 0 && !orph) return('<div class="okf-foot">\u2713 no link issues</div>')
   bits <- character(0)
-  if (nb > 0) bits <- c(bits, sprintf('<span class="bad">⚠ %d broken link%s</span>', nb, if (nb == 1) "" else "s"))
+  if (nb > 0) bits <- c(bits, sprintf('<span class="bad">\u26a0 %d broken link%s</span>', nb, if (nb == 1) "" else "s"))
   if (orph)  bits <- c(bits, '<span class="bad">orphan (no inbound links)</span>')
-  sprintf('<div class="okf-foot">%s</div>', paste(bits, collapse = " · "))
+  sprintf('<div class="okf-foot">%s</div>', paste(bits, collapse = " \u00b7 "))
 }
 
 .okf_doc <- function(title, body_inner) {
