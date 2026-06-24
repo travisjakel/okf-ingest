@@ -54,3 +54,22 @@ test_that("html render produces files when commonmark is available", {
   g <- tempfile(fileext = ".html"); okf_graph_html(con, g)
   expect_true(file.exists(g))
 })
+
+test_that("wikilinks resolve by id / alias / title and markdown is unchanged", {
+  d <- tempfile("okfw_"); dir.create(d)
+  writeLines(c("---","type: Index","title: Home","---","# Home","- [A](a.md)"), file.path(d, "index.md"))
+  writeLines(c("---","type: Note","id: a1","title: Concept A","aliases: [Alpha]","---",
+               "# A","see [[Concept B]] and [[b-id]]"), file.path(d, "a.md"))
+  writeLines(c("---","type: Note","id: b-id","title: Concept B","---",
+               "# B","back to [[Alpha]]; [[Nope]] missing"), file.path(d, "b.md"))
+  res <- okf_ingest(d); con <- res$con
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE))
+  lk <- okf_graph_df(con)
+  res_of <- function(src, raw) lk$dst_path[lk$src_path == src & lk$dst_raw == raw]
+  expect_equal(res_of("a.md", "Concept B"), "b.md")   # by title
+  expect_equal(res_of("a.md", "b-id"), "b.md")         # by id
+  expect_equal(res_of("b.md", "Alpha"), "a.md")        # by alias
+  expect_true(is.na(res_of("b.md", "Nope")))           # unresolved
+  expect_equal(res_of("index.md", "a.md"), "a.md")     # markdown link unchanged
+  expect_equal(okf_extract_wikilinks("x [[Foo|bar]] y [[Baz]]"), c("Foo", "Baz"))
+})

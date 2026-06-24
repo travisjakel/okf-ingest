@@ -74,6 +74,24 @@ okf_extract_links <- function(body) {
   sub("^\\]\\(\\s*", "", regs)
 }
 
+#' Extract `[[wikilink]]` targets from a concept body.
+#'
+#' Supports `[[target]]` and `[[target|display]]`; strips the display text and
+#' any `#anchor`, returning the reference as written. These are resolved by
+#' name (id / alias / title / filename-stem) rather than by path -- see
+#' [okf_links()] -- so they work with Obsidian/Logseq/Foam-style vaults and stay
+#' valid across file renames.
+#'
+#' @param body Concept body text.
+#' @return Character vector of raw wikilink references (as written).
+#' @export
+okf_extract_wikilinks <- function(body) {
+  m <- regmatches(body, gregexpr("\\[\\[([^]]+)\\]\\]", body, perl = TRUE))[[1]]
+  if (!length(m)) return(character(0))
+  inner <- sub("^\\[\\[(.*)\\]\\]$", "\\1", m)
+  unname(vapply(inner, function(s) trimws(strsplit(s, "|", fixed = TRUE)[[1]][1]), ""))
+}
+
 .okf_norm <- function(p) {
   parts <- strsplit(gsub("\\\\", "/", p), "/", fixed = TRUE)[[1]]
   out <- character(0)
@@ -102,6 +120,43 @@ okf_resolve_link <- function(raw, src_rel, known) {
 
 .is_external <- function(raw) grepl("^[a-zA-Z][a-zA-Z0-9+.-]*:", sub("#.*$", "", raw))
 
+# Name index for wikilink resolution: lowercased id / alias / title / filename-
+# stem -> path. Keys that map to more than one concept are AMBIGUOUS and dropped
+# (a wikilink to an ambiguous name resolves to nothing rather than guessing --
+# deterministic). The id/alias/title precedence is applied at resolution time.
+.okf_wiki_index <- function(concepts) {
+  maps <- list(id = list(), alias = list(), title = list(), stem = list())
+  amb  <- list(id = character(0), alias = character(0), title = character(0), stem = character(0))
+  add <- function(kind, key, path) {
+    key <- tolower(trimws(key)); if (!nzchar(key)) return(invisible())
+    cur <- maps[[kind]][[key]]
+    if (!is.null(cur) && cur != path) amb[[kind]] <<- c(amb[[kind]], key)
+    maps[[kind]][[key]] <<- path
+  }
+  for (c in concepts) {
+    id <- .s(c$frontmatter$id); if (!is.na(id)) add("id", id, c$path)
+    if (!is.na(.s(c$title))) add("title", c$title, c$path)
+    for (a in as.character(c$frontmatter$aliases)) add("alias", a, c$path)
+    add("stem", sub("\\.md$", "", basename(c$path)), c$path)
+  }
+  for (kind in names(maps)) for (k in unique(amb[[kind]])) maps[[kind]][[k]] <- NULL
+  maps
+}
+
+# Resolve a wikilink reference to a path: explicit path/stem first, then by
+# id -> alias -> title -> stem (case-insensitive). NA if unresolved.
+.okf_resolve_wiki <- function(ref, idx, known) {
+  ref <- trimws(sub("#.*$", "", ref)); if (!nzchar(ref)) return(NA_character_)
+  if (ref %in% known) return(ref)
+  cand <- if (grepl("\\.md$", ref)) ref else paste0(ref, ".md")
+  if (cand %in% known) return(cand)
+  lref <- tolower(ref)
+  for (kind in c("id", "alias", "title", "stem")) {
+    v <- idx[[kind]][[lref]]; if (!is.null(v)) return(v)
+  }
+  NA_character_
+}
+
 #' Read an OKF bundle from a directory into an in-memory representation.
 #'
 #' @param root Path to the bundle directory.
@@ -125,6 +180,7 @@ okf_read <- function(root, bundle_id = NULL, source_kind = "dir") {
          tags = p$meta$tags, timestamp = .s(p$meta$timestamp),
          body = p$body, frontmatter = p$meta, parse_error = p$err,
          links_raw = okf_extract_links(p$body),
+         wikilinks_raw = okf_extract_wikilinks(p$body),
          content_hash = digest::digest(p$body, algo = "sha1", serialize = FALSE))
   })
   known <- vapply(concepts, function(c) c$path, character(1))
@@ -137,16 +193,24 @@ okf_read <- function(root, bundle_id = NULL, source_kind = "dir") {
 
 #' Build the concept graph (resolved and broken links) for a bundle.
 #'
+#' Includes both markdown `](path)` links (resolved by path) and
+#' `[[wikilink]]` references (resolved by name: id / alias / title / stem).
+#'
 #' @param rd A bundle as returned by [okf_read()].
 #' @return A data.frame with `src_path`, `dst_raw`, `dst_path`, `resolved`.
 #' @export
 okf_links <- function(rd) {
   rows <- list()
-  for (c in rd$concepts) for (raw in c$links_raw) {
-    if (.is_external(raw)) next
-    dst <- okf_resolve_link(raw, c$path, rd$known)
-    rows[[length(rows) + 1]] <- data.frame(src_path = c$path, dst_raw = raw,
-      dst_path = dst, resolved = !is.na(dst), stringsAsFactors = FALSE)
+  add_row <- function(src, raw, dst) rows[[length(rows) + 1]] <<- data.frame(
+    src_path = src, dst_raw = raw, dst_path = dst, resolved = !is.na(dst),
+    stringsAsFactors = FALSE)
+  widx <- .okf_wiki_index(rd$concepts)
+  for (c in rd$concepts) {
+    for (raw in c$links_raw) {
+      if (.is_external(raw)) next
+      add_row(c$path, raw, okf_resolve_link(raw, c$path, rd$known))
+    }
+    for (raw in c$wikilinks_raw) add_row(c$path, raw, .okf_resolve_wiki(raw, widx, rd$known))
   }
   if (!length(rows)) return(data.frame(src_path = character(), dst_raw = character(),
     dst_path = character(), resolved = logical()))

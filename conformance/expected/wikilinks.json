@@ -1,0 +1,10 @@
+{
+  "bundle": { "n_concepts": 2, "conformant": true },
+  "links": { "total": 5, "broken": 1 },
+  "resolutions": {
+    "a.md|Concept B": "b.md",
+    "a.md|b-id": "b.md",
+    "b.md|Alpha": "a.md",
+    "b.md|Nope": null
+  }
+}

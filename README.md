@@ -327,6 +327,17 @@ Anything ambiguous is reported, never guessed (no LLM). Ready-made
 [`examples/github-action.yml`](examples/github-action.yml) wire it into your
 workflow so a bundle can't drift broken.
 
+### `[[wikilinks]]` & aliases
+
+Alongside markdown `](path.md)` links (resolved by path, unchanged), okf-ingest
+resolves `[[wikilink]]` references — `[[Concept Name]]` and `[[name|display]]` —
+by **name**, trying `id` → `alias` → `title` → filename-stem (ambiguous names
+resolve to nothing, never a guess). Add `aliases: [Alt Name]` and an optional
+`id:` to a concept's frontmatter to give it stable handles. This makes
+okf-ingest work on Obsidian / Logseq / Foam-style vaults out of the box, and —
+because links target a name, not a path — they survive file renames. Existing
+markdown-only bundles are byte-identical; wikilinks are purely additive.
+
 A `<source>` is a local directory, a **git URL** (github/gitlab/bitbucket, `.git`,
 or `git@`), or a **tar/zip archive** (local path or `http(s)` URL). Remote sources
 are fetched to a temp dir and cleaned up automatically; `--subdir` selects a

@@ -52,6 +52,20 @@ for er in expn["validation"]["error_rules"]:
     check(f"negative.{er['path']}", rules.get(er["path"]), er["rule"])
 con2.close()
 
+# --- wikilinks ([[name]] resolved by id/alias/title/stem; markdown unchanged) ---
+conw, sw = okf.ingest(os.path.join(HERE, "bundles", "wikilinks"))
+expw = json.load(open(os.path.join(HERE, "expected", "wikilinks.json")))
+check("wikilinks.n_concepts", sw["n_concepts"], expw["bundle"]["n_concepts"])
+check("wikilinks.conformant", sw["conformant"], expw["bundle"]["conformant"])
+check("wikilinks.links_total", sw["links_total"], expw["links"]["total"])
+check("wikilinks.links_broken", sw["links_broken"], expw["links"]["broken"])
+wl = {(s, r): d for s, r, d in conw.execute(
+    "SELECT src_path, dst_raw, dst_path FROM okf_link").fetchall()}
+for key, want in expw["resolutions"].items():
+    src, raw = key.split("|", 1)
+    check(f"wikilinks.{key}", wl.get((src, raw)), want)
+conw.close()
+
 if fails:
     print("FAIL\n  " + "\n  ".join(fails)); sys.exit(1)
 print("PASS — Python binding conformant on all fixtures")

@@ -35,6 +35,7 @@ _OKFLoader.yaml_implicit_resolvers = {
 }
 _ISO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _LINK = re.compile(r"\]\(\s*([^)\s]+)")
+_WIKILINK = re.compile(r"\[\[([^\]]+)\]\]")
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 # Mirror of schema/catalog.sql (that file is canonical; keep in sync).
@@ -69,6 +70,7 @@ class Concept:
     frontmatter: Optional[dict]
     parse_error: Optional[str]
     links_raw: list
+    wikilinks_raw: list
     content_hash: str
 
 
@@ -123,6 +125,58 @@ def extract_links(body: str) -> list:
     return _LINK.findall(body)
 
 
+def extract_wikilinks(body: str) -> list:
+    """Extract [[wikilink]] / [[target|display]] references (display + #anchor
+    stripped). Resolved by name (id/alias/title/stem), not path — see links()."""
+    return [m.split("|", 1)[0].strip() for m in _WIKILINK.findall(body)]
+
+
+def _wiki_index(concepts: list) -> dict:
+    """lowercased id/alias/title/stem -> path. Keys mapping to >1 concept are
+    ambiguous and dropped (a wikilink to an ambiguous name resolves to nothing,
+    deterministically). id/alias/title precedence is applied at resolution."""
+    maps = {"id": {}, "alias": {}, "title": {}, "stem": {}}
+    amb = {"id": set(), "alias": set(), "title": set(), "stem": set()}
+
+    def add(kind, key, path):
+        key = str(key).strip().lower()
+        if not key:
+            return
+        if maps[kind].get(key, path) != path:
+            amb[kind].add(key)
+        maps[kind][key] = path
+    for c in concepts:
+        fm = c.frontmatter or {}
+        if fm.get("id") is not None:
+            add("id", fm["id"], c.path)
+        if c.title:
+            add("title", c.title, c.path)
+        for a in (fm.get("aliases") or []):
+            add("alias", a, c.path)
+        add("stem", os.path.splitext(os.path.basename(c.path))[0], c.path)
+    for kind in maps:
+        for k in amb[kind]:
+            maps[kind].pop(k, None)
+    return maps
+
+
+def resolve_wiki(ref: str, idx: dict, known: set) -> Optional[str]:
+    ref = ref.split("#", 1)[0].strip()
+    if not ref:
+        return None
+    if ref in known:
+        return ref
+    cand = ref if ref.endswith(".md") else ref + ".md"
+    if cand in known:
+        return cand
+    lref = ref.lower()
+    for kind in ("id", "alias", "title", "stem"):
+        v = idx[kind].get(lref)
+        if v is not None:
+            return v
+    return None
+
+
 def _norm(p: str) -> str:
     out = []
     for s in p.replace("\\", "/").split("/"):
@@ -174,6 +228,7 @@ def read_bundle(root: str, bundle_id: Optional[str] = None, source_kind: str = "
             tags=meta.get("tags"), timestamp=_s(meta.get("timestamp")),
             body=p["body"], frontmatter=p["meta"], parse_error=p["err"],
             links_raw=extract_links(p["body"]),
+            wikilinks_raw=extract_wikilinks(p["body"]),
             content_hash=hashlib.sha1(p["body"].encode("utf-8")).hexdigest()))
     known = {c.path for c in concepts}
     idx = [c for c in concepts if c.path == "index.md"]
@@ -185,11 +240,16 @@ def read_bundle(root: str, bundle_id: Optional[str] = None, source_kind: str = "
 
 def links(b: Bundle) -> list:
     out = []
+    idx = _wiki_index(b.concepts)
     for c in b.concepts:
         for raw in c.links_raw:
             if _is_external(raw):
                 continue
             dst = resolve_link(raw, c.path, b.known)
+            out.append({"src_path": c.path, "dst_raw": raw,
+                        "dst_path": dst, "resolved": dst is not None})
+        for raw in c.wikilinks_raw:
+            dst = resolve_wiki(raw, idx, b.known)
             out.append({"src_path": c.path, "dst_raw": raw,
                         "dst_path": dst, "resolved": dst is not None})
     return out

@@ -55,5 +55,22 @@ for (i in seq_len(nrow(exn$validation$error_rules))) {
 }
 DBI::dbDisconnect(r2$con, shutdown = TRUE)
 
+# wikilinks ([[name]] resolved by id/alias/title/stem; markdown links unchanged)
+rw  <- okf_ingest(file.path(here, "bundles", "wikilinks"))
+exw <- jsonlite::fromJSON(file.path(here, "expected", "wikilinks.json"))
+chk("wikilinks.n_concepts",   rw$summary$n_concepts,   exw$bundle$n_concepts)
+chk("wikilinks.conformant",   rw$summary$conformant,   exw$bundle$conformant)
+chk("wikilinks.links_total",  rw$summary$links_total,  exw$links$total)
+chk("wikilinks.links_broken", rw$summary$links_broken, exw$links$broken)
+wl <- DBI::dbGetQuery(rw$con, "SELECT src_path, dst_raw, dst_path FROM okf_link")
+for (key in names(exw$resolutions)) {
+  pp   <- strsplit(key, "|", fixed = TRUE)[[1]]
+  got  <- wl$dst_path[wl$src_path == pp[1] & wl$dst_raw == pp[2]]
+  want <- exw$resolutions[[key]]
+  want <- if (is.null(want) || is.na(want)) NA_character_ else want
+  chk(paste0("wikilinks.", key), got, want)
+}
+DBI::dbDisconnect(rw$con, shutdown = TRUE)
+
 if (length(fails)) { cat("FAIL\n  ", paste(fails, collapse = "\n  "), "\n"); quit(status = 1) }
 cat("PASS — R binding conformant on all fixtures\n")
