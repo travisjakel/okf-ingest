@@ -9,6 +9,12 @@
 
 A unified, open-source **ingestion tool for [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) bundles** — read any OKF bundle, validate its conformance (permissively, per the spec), build the concept graph, and load it into a portable, queryable **DuckDB catalog**. One catalog format, two idiomatic bindings: **R** and **Python**.
 
+> **Point it at your `[[wikilink]]` vault.** As of 0.6, okf-ingest resolves both
+> markdown `](path)` links *and* `[[wikilink]]` references (Obsidian / Logseq /
+> Foam) — by **name** (id / alias / title), so links **survive file renames**.
+> Your existing notes become a deterministic, queryable, renderable knowledge
+> graph with no rewriting. See [`[[wikilinks]]` & aliases](#wikilinks--aliases).
+
 ![okf graph of okf-ingest's own documentation bundle](docs/graph.png)
 
 > The image is `okf graph` run on [okf-ingest's own docs](docs/okf-bundle/) — the
@@ -58,6 +64,7 @@ deterministic and model-free.
 | Content stays local / private | ✅ | ⚠️ | ❌ sent to a model | ✅ |
 | SQL / programmatic access | ❌ | ⚠️ vectors only | ⚠️ | ✅ DuckDB |
 | Explicit concept graph | ⚠️ implicit | ❌ | ✅ inferred | ✅ author-written |
+| Your `[[wikilink]]` notes → queryable graph | ⚠️ renders only | ❌ ignores links | ⚠️ non-deterministic | ✅ + rename-safe |
 | Renders to HTML + interactive graph | ⚠️ | ❌ | ✅ | ✅ |
 | Semantic search | ❌ | ✅ | ✅ | ✅ (opt-in) |
 | Invents structure with an LLM | ❌ | ❌ | ✅ | ❌ by design |
@@ -433,14 +440,14 @@ The OKF tooling ecosystem appeared within weeks of the v0.1 spec. okf-ingest is
 deliberately positioned where the others aren't — a queryable catalog + RAG, in
 R and Python:
 
-| Tool | Lang | Validate | Parse/graph | Queryable store | Embeddings / RAG |
-|------|------|:--:|:--:|:--:|:--:|
-| `GoogleCloudPlatform/knowledge-catalog` | Py/TS | — | producer + HTML viz | — | — |
-| `W4G1/okf` | Rust | ✓ | ✓ | — | — |
-| `sniperunder123/okf-knowledge` | Python (Claude Code skill) | ✓ | ✓ + **authoring & graph viz** | — | — |
-| WitsCode / okf.site | Node/web | ✓ | partial | — | — |
-| okf-skills / okf-skill | agent skills | ✓ | ✓ | — | — |
-| **okf-ingest** (this) | **R + Python** | ✓ | ✓ | **DuckDB catalog** | **✓** |
+| Tool | Lang | Validate | Parse/graph | `[[wikilinks]]` | Queryable store | Embeddings / RAG |
+|------|------|:--:|:--:|:--:|:--:|:--:|
+| `GoogleCloudPlatform/knowledge-catalog` | Py/TS | — | producer + HTML viz | — | — | — |
+| `W4G1/okf` | Rust | ✓ | ✓ | — | — | — |
+| `sniperunder123/okf-knowledge` | Python (Claude Code skill) | ✓ | ✓ + **authoring & graph viz** | — | — | — |
+| WitsCode / okf.site | Node/web | ✓ | partial | — | — | — |
+| okf-skills / okf-skill | agent skills | ✓ | ✓ | — | — | — |
+| **okf-ingest** (this) | **R + Python** | ✓ | ✓ | **✓ rename-safe** | **DuckDB catalog** | **✓** |
 
 okf-ingest sits on the **consume** side of the OKF lifecycle. For the **produce**
 side — authoring, maintaining, and visualizing bundles (especially inside Claude
