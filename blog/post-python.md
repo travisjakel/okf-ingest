@@ -85,6 +85,8 @@ write("index.md", fm("Index", "Interpretable Machine Learning") +
       ["# Interpretable Machine Learning", ""] + [f"- [{p}]({pslug(p)}.md)" for p in PARTS])
 ```
 
+> Already keep notes in Obsidian/Logseq/Foam? Skip most of this — okf-ingest resolves `[[wikilinks]]` by name (id / alias / title, rename-safe), so a vault is already an OKF bundle in all but the frontmatter `type`.
+
 ## Step 3 — ingest, and you have a catalog
 
 From the CLI, or the library:
