@@ -1,0 +1,19 @@
+# Bundle manifest (extension point 3) — all bundle-level config in one open doc.
+name: ml-notes
+version: 0.1.0
+okf_version: "0.1"
+license: CC-BY-4.0
+description: A tiny bundle exercising the OKF extension prototype.
+
+# Type vocabulary — STRUCTURED (a map, not a flat enum) so it can grow into
+# per-type schemas without changing shape. Validation is opt-in + warnings only.
+types:
+  Index: {}
+  Concept: {}
+  Method: { requires: [timestamp] }   # Method concepts should carry a timestamp
+  Dataset: {}
+  Log: {}
+
+# Allowed relationship types for typed links (edge model). Free strings; the
+# manifest just constrains them when present.
+relations: [depends-on, see-also, parent]
