@@ -231,6 +231,39 @@ swap in any `texts -> list[vector]` callable), and stores vectors in `okf_chunk`
 part of the shared catalog, so you can embed with one binding and query with the
 other.
 
+## Without the catalog — the lean parse / lint / graph layer
+
+The DuckDB catalog is the *queryable materialization*; it isn't on the critical
+path for parsing, linting, or graphing a bundle. If you don't want to touch
+DuckDB at all, three functions hand you the whole model as plain data structures
+(R: data frames / lists; Python: dicts / dataclasses) and **never go through the
+catalog**:
+
+| | R | Python | Gives you |
+|---|---|---|---|
+| Parse | `okf_read()` | `read_bundle()` | concepts (frontmatter + body) |
+| Lint / health | `okf_validate()` | `validate()` | the *same* findings `doctor` reports — broken links, orphans, missing fields, non-ISO timestamps |
+| Graph | `okf_links()` | `links()` | resolved + broken edges (markdown **and** `[[wikilinks]]`) |
+
+```r
+rd  <- okf_read("my-bundle")        # no DuckDB
+val <- okf_validate(rd)             # data.frame of findings (broken_link, orphan, …)
+lk  <- okf_links(rd)                # src_path / dst_raw / dst_path / resolved
+subset(lk, !resolved)               # every dangling link, as data — your call what to do
+```
+
+```python
+b   = okf.read_bundle("my-bundle")  # no DuckDB
+val = okf.validate(b)               # list of findings
+lk  = okf.links(b)                  # the edge graph
+[e for e in lk if not e["resolved"]]
+```
+
+Reach for the catalog (`okf_ingest`) when you want what a SQL engine is *for*:
+SQL `query`, the rendered `html`/`graph`, `context` blobs, or vector `rag`. So
+DuckDB is effectively opt-in by usage — build it when you need it, ignore it when
+you don't.
+
 ## CLI
 
 Identical subcommands in both languages — after install just `okf …` (Python
