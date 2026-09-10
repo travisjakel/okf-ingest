@@ -24,19 +24,51 @@ def chunk_body(body: str, target_chars: int = 600) -> list:
     return chunks
 
 
+def _embed_endpoint(base: Optional[str] = None) -> tuple[str, str]:
+    """(url, shape) for the local embedder. shape is 'openai' | 'ollama_batch' |
+    'ollama_single'. llama-swap serves the OpenAI shape on :11435 and does NOT
+    serve Ollama's /api/embeddings, so the path is resolved, never hard-coded.
+    An explicit `base` (the caller's Ollama root) still wins, as before.
+    Order: base, then LLM_EMBED_URL, then LLM_LOCAL_BACKEND=llamaswap, then OLLAMA_URL."""
+    u = (base.rstrip("/") + "/api/embeddings") if base else os.environ.get("LLM_EMBED_URL", "")
+    if not u:
+        if os.environ.get("LLM_LOCAL_BACKEND", "ollama").strip().lower() == "llamaswap":
+            root = os.environ.get("LLAMASWAP_URL",
+                                  "http://127.0.0.1:11435/v1/chat/completions").rstrip("/")
+            if root.endswith("/v1/chat/completions"):
+                root = root[: -len("/v1/chat/completions")]
+            u = root + "/v1/embeddings"
+        else:
+            u = os.environ.get("OLLAMA_URL", "http://localhost:11434").rstrip("/") + "/api/embeddings"
+    p = u.rstrip("/")
+    if p.endswith("/v1/embeddings"):
+        return u, "openai"
+    if p.endswith("/api/embeddings"):
+        return u, "ollama_single"
+    return u, "ollama_batch"
+
+
 def ollama_embedder(model: str = "nomic-embed-text",
                     url: Optional[str] = None) -> Callable:
-    url = url or os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    endpoint, shape = _embed_endpoint(url)
 
     def embed(texts):
         out = []
         for t in texts:
+            body = ({"model": model, "prompt": t} if shape == "ollama_single"
+                    else {"model": model, "input": [t]})
             req = urllib.request.Request(
-                f"{url}/api/embeddings",
-                data=json.dumps({"model": model, "prompt": t}).encode("utf-8"),
+                endpoint,
+                data=json.dumps(body).encode("utf-8"),
                 headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=120) as r:
-                out.append(json.loads(r.read())["embedding"])
+                j = json.loads(r.read())
+            if shape == "ollama_single":
+                out.append(j["embedding"])
+            elif shape == "openai":
+                out.append(j["data"][0]["embedding"])
+            else:
+                out.append(j["embeddings"][0])
         return out
     return embed
 
