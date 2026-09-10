@@ -493,18 +493,30 @@ okf_chunk_body <- function(body, target_chars = 600L) {
 #' [okf_rag()].
 #'
 #' @param model Ollama embedding model name.
-#' @param url Ollama base URL (defaults to the `OLLAMA_URL` env var or localhost).
+#' @param url Ollama base URL (defaults to the `OLLAMA_URL` env var or
+#'   localhost). An explicit value here still means "that Ollama box"; the
+#'   default instead defers to the shared `lib/embed_local.R` resolver, which
+#'   picks llama-swap's OpenAI shape when `LLM_LOCAL_BACKEND` says so.
 #' @return A function `texts -> list(numeric)`. Requires the httr2 package.
 #' @export
 okf_ollama_embedder <- function(model = "nomic-embed-text",
                                 url = Sys.getenv("OLLAMA_URL", "http://localhost:11434")) {
   if (!requireNamespace("httr2", quietly = TRUE)) stop("okf_ollama_embedder needs the httr2 package")
-  function(texts) lapply(texts, function(t) {
-    r <- httr2::request(paste0(url, "/api/embeddings")) |>
-      httr2::req_body_json(list(model = model, prompt = t)) |>
-      httr2::req_timeout(120) |> httr2::req_perform()
-    as.numeric(httr2::resp_body_json(r)$embedding)
-  })
+  if (!exists("embed_texts", mode = "function"))
+    source("~/R_Files/lib/embed_local.R")
+  function(texts) {
+    m <- embed_texts(texts, model = model, url = .okf_embed_url(url))
+    lapply(seq_len(nrow(m)), function(i) as.numeric(m[i, ]))
+  }
+}
+
+# An explicit url= still means "that Ollama box", exactly as before. Only the
+# default defers to lib/embed_local.R, which picks llama-swap's OpenAI shape
+# when LLM_LOCAL_BACKEND says so - llama-swap does not serve /api/embeddings.
+.okf_embed_url <- function(u) {
+  if (!identical(u, Sys.getenv("OLLAMA_URL", "http://localhost:11434")))
+    return(paste0(sub("/+$", "", u), "/api/embeddings"))
+  NULL
 }
 
 .okf_vec_lit <- function(v) paste0("[", paste(vapply(v, function(z) sprintf("%.8g", z), ""),
