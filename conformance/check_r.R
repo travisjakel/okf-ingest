@@ -181,5 +181,20 @@ for (pth in names(exa$timestamps)) {
 }
 DBI::dbDisconnect(ra$con, shutdown = TRUE)
 
+# yaml_scalars: YAML 1.2 core-schema booleans, identical in every binding.
+ry  <- okf_ingest(file.path(here, "bundles", "yaml_scalars"))
+exy <- jsonlite::fromJSON(file.path(here, "expected", "yaml_scalars.json"))
+chk("ys.n_concepts", ry$summary$n_concepts, exy$bundle$n_concepts)
+chk("ys.conformant", ry$summary$conformant, exy$bundle$conformant)
+fmy <- jsonlite::fromJSON(DBI::dbGetQuery(ry$con,
+  "SELECT frontmatter FROM okf_concept WHERE path='scalars.md'")$frontmatter)
+for (k in names(exy$strings_every_binding))
+  chk(paste0("ys.str[", k, "]"), fmy[[k]], exy$strings_every_binding[[k]])
+for (k in names(exy$booleans_typed_bindings))
+  chk(paste0("ys.bool[", k, "]"), fmy[[k]], exy$booleans_typed_bindings[[k]])
+chk("ys.parameter_names", as.character(fmy$parameters$name), exy$parameter_names)
+chk("ys.parameter_required", as.logical(fmy$parameters$required), exy$parameter_required_typed)
+DBI::dbDisconnect(ry$con, shutdown = TRUE)
+
 if (length(fails)) { cat("FAIL\n  ", paste(fails, collapse = "\n  "), "\n"); quit(status = 1) }
 cat("PASS — R binding conformant on all fixtures\n")

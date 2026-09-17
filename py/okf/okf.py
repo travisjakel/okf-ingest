@@ -23,16 +23,37 @@ RESERVED = {"index.md", "log.md"}
 
 
 class _OKFLoader(yaml.SafeLoader):
-    """SafeLoader that leaves ISO timestamps as plain strings (matching the R
-    binding) instead of coercing them to datetime — keeps `timestamp` verbatim
-    and frontmatter JSON-serializable."""
+    """SafeLoader restricted to the YAML 1.2 core schema for the two implicit
+    resolutions that cost cross-binding agreement.
+
+    1. ISO timestamps stay plain strings (matching R) instead of becoming
+       datetime, which keeps `timestamp` verbatim and the frontmatter
+       JSON-serializable.
+    2. Only `true`/`false` resolve to booleans. PyYAML implements YAML *1.1*,
+       where `yes`, `no`, `on` and `off` are also booleans; YAML 1.2 dropped
+       them, and the Rust, C++ and MATLAB bindings are all 1.2 or raw-text. A
+       frontmatter value like `name: off` therefore used to mean different
+       things in different bindings — see the `yaml_scalars` fixture.
+    """
     pass
 
 
+# YAML 1.2 core schema booleans. The 1.1 set (y/Y/yes/n/N/no/on/off and case
+# variants) is deliberately NOT matched.
+_BOOL_12 = re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$")
+
 _OKFLoader.yaml_implicit_resolvers = {
-    k: [(tag, rx) for tag, rx in v if tag != "tag:yaml.org,2002:timestamp"]
+    k: [(tag, rx) for tag, rx in v
+        if tag not in ("tag:yaml.org,2002:timestamp", "tag:yaml.org,2002:bool")]
     for k, v in yaml.SafeLoader.yaml_implicit_resolvers.items()
 }
+# Re-add bool for the 1.2 spellings only, under the first characters they can
+# start with. Anything else that used to resolve as a 1.1 bool now stays a str.
+for _c in "tTfF":
+    _OKFLoader.yaml_implicit_resolvers.setdefault(_c, [])
+    _OKFLoader.yaml_implicit_resolvers[_c] = (
+        [("tag:yaml.org,2002:bool", _BOOL_12)]
+        + _OKFLoader.yaml_implicit_resolvers[_c])
 # SPEC 5: every timestamp-valued key is an ISO 8601 datetime with an explicit
 # UTC offset. Upstream made this literal on 2026-08-21 and the reference bundles
 # now emit "+00:00", so a trailing-Z-only pattern rejected 44 of 44 conformant

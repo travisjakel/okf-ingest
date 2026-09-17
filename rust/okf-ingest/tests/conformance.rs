@@ -307,6 +307,44 @@ fn conformance() {
         );
     }
 
+    // --- yaml_scalars: YAML 1.2 core-schema booleans, identical everywhere ---
+    let ingy = ingest(here.join("bundles/yaml_scalars").to_str().unwrap()).unwrap();
+    let expy = load("expected/yaml_scalars.json");
+    let fmy = ingy
+        .bundle
+        .concepts
+        .iter()
+        .find(|c| c.path == "scalars.md")
+        .and_then(|c| c.frontmatter.clone())
+        .expect("scalars.md frontmatter");
+    for (k, want) in expy["strings_every_binding"].as_object().unwrap() {
+        c.check(
+            &format!("ys.str[{k}]"),
+            fmy.get(k).and_then(|v| v.as_str()).map(str::to_string),
+            want.as_str().map(str::to_string),
+        );
+    }
+    for (k, want) in expy["booleans_typed_bindings"].as_object().unwrap() {
+        c.check(
+            &format!("ys.bool[{k}]"),
+            fmy.get(k).and_then(|v| v.as_bool()),
+            want.as_bool(),
+        );
+    }
+    let names: Vec<String> = fmy["parameters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["name"].as_str().unwrap().to_string())
+        .collect();
+    let want_names: Vec<String> = expy["parameter_names"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_string())
+        .collect();
+    c.check("ys.parameter_names", names, want_names);
+
     // --- rank (Personalized PageRank: exact, deterministic, parity-locked) ---
     let ingr = ingest(here.join("bundles/store").to_str().unwrap()).unwrap();
     let expr = load("expected/rank.json");

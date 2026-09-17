@@ -166,6 +166,22 @@ for pth, want in expa["timestamps"].items():
     check("v02a.timestamp[" + pth + "]", ts_a.get(pth), want)
 cona.close()
 
+# yaml_scalars: YAML 1.2 core-schema booleans, identical in every binding.
+cony, sy = okf.ingest(os.path.join(HERE, "bundles", "yaml_scalars"))
+expy = json.load(open(os.path.join(HERE, "expected", "yaml_scalars.json")))
+check("ys.n_concepts", sy["n_concepts"], expy["bundle"]["n_concepts"])
+check("ys.conformant", sy["conformant"], expy["bundle"]["conformant"])
+fmy = json.loads(cony.execute(
+    "SELECT frontmatter FROM okf_concept WHERE path='scalars.md'").fetchone()[0])
+for k, want in expy["strings_every_binding"].items():
+    check("ys.str[" + k + "]", fmy.get(k), want)
+for k, want in expy["booleans_typed_bindings"].items():
+    check("ys.bool[" + k + "]", fmy.get(k), want)
+check("ys.parameter_names", [p["name"] for p in fmy["parameters"]], expy["parameter_names"])
+check("ys.parameter_required", [p["required"] for p in fmy["parameters"]],
+      expy["parameter_required_typed"])
+cony.close()
+
 if fails:
     print("FAIL\n  " + "\n  ".join(fails)); sys.exit(1)
 print("PASS — Python binding conformant on all fixtures")

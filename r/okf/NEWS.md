@@ -1,3 +1,32 @@
+# okf 0.12.1
+
+* **Cross-binding parity fix: YAML 1.1 booleans.** `y`, `Y`, `yes`, `n`, `N`,
+  `no`, `on` and `off` are booleans in YAML 1.1 and plain strings in YAML 1.2.
+  R's `yaml` and Python's PyYAML implement 1.1; yaml-rust2, rapidyaml and the
+  MATLAB subset parser do not. The three disagreed with each other on the same
+  frontmatter -- `name: n` read as `FALSE` in R, `"n"` in Rust, and PyYAML split
+  the difference -- which broke the promise that one bundle yields one catalog.
+  In R the consequence was functional, not cosmetic: a parameter named `n` had a
+  logical for a name and could never be bound by `okf_bind()`, and a parameter
+  named `n` is entirely ordinary. Both 1.1 parsers now follow the YAML 1.2 core
+  schema, so only `true`/`false` (and case variants) become logical and every
+  other word stays the text the author wrote.
+
+  Found by building a package on top of `okf_bind()` whose first test fixture
+  happened to name a parameter `n`. The conformance corpus had no bool-ish
+  scalar in it, so nothing caught it.
+
+  Measured before shipping: across the 220 concepts of a live wiki and all four
+  of the format's reference bundles, **zero** concepts' parsed frontmatter
+  changes. The fix is inert on existing data and prevents the divergence.
+
+* New fixture `bundles/yaml_scalars`, locked in all five bindings. It also
+  records a pre-existing difference it would be dishonest to hide: R, Python and
+  Rust are typed parsers and resolve `true` to a boolean, while the C++ and
+  MATLAB parsers keep every scalar as raw text by design -- which is what makes
+  timestamps verbatim for free there. The fixture asserts the 1.1-only words as
+  strings in *every* binding, and asserts `true`/`false` per binding family.
+
 # okf 0.12.0
 
 Measured against the four reference bundles in

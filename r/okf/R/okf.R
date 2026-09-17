@@ -66,10 +66,29 @@ okf_parse_file <- function(path) {
   if (is.na(close)) return(list(meta = NULL, body = txt, err = "unclosed_frontmatter"))
   fm   <- paste(raw[(open + 1):(close - 1)], collapse = "\n")
   body <- if (close < length(raw)) paste(raw[(close + 1):length(raw)], collapse = "\n") else ""
-  meta <- tryCatch(yaml::yaml.load(fm), error = function(e) NULL)
+  meta <- tryCatch(yaml::yaml.load(fm, handlers = OKF_YAML_HANDLERS),
+                   error = function(e) NULL)
   if (is.null(meta)) return(list(meta = NULL, body = body, err = "yaml_parse_error"))
   list(meta = meta, body = body, err = NA_character_)
 }
+
+# YAML 1.2 core-schema booleans, for cross-binding agreement.
+#
+# R's yaml package implements YAML *1.1*, where `y`, `Y`, `yes`, `n`, `N`, `no`,
+# `on` and `off` are all booleans. YAML 1.2 dropped them, and the Rust
+# (yaml-rust2), C++ (rapidyaml) and MATLAB bindings are 1.2 or raw-text. So the
+# same frontmatter meant different things in different bindings: `name: n` read
+# as FALSE here, "n" in Rust, and PyYAML disagreed with both on some spellings.
+# A parameter named `n` is entirely ordinary, and once its name is a logical it
+# can never be bound.
+#
+# The handlers receive the scalar's SOURCE TEXT, so only `true`/`false` (and
+# their case variants) become logical and everything else stays the string the
+# author wrote. Locked cross-binding by the `yaml_scalars` fixture.
+OKF_YAML_HANDLERS <- list(
+  `bool#yes` = function(x) if (x %in% c("true", "True", "TRUE")) TRUE else x,
+  `bool#no`  = function(x) if (x %in% c("false", "False", "FALSE")) FALSE else x
+)
 
 #' Extract markdown link targets from a concept body (OKF cross-links, sec. 4).
 #'

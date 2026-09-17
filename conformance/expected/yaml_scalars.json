@@ -1,0 +1,41 @@
+{
+  "bundle": {
+    "n_files": 2,
+    "n_concepts": 1,
+    "n_conformant": 1,
+    "conformant": true
+  },
+  "_note": "Two separate things are locked here. (1) THE PARITY FIX: y/Y/yes/n/N/no/on/off are booleans in YAML 1.1 and STRINGS in 1.2. R's yaml and PyYAML implement 1.1, so before 0.12.1 `name: n` read as FALSE in R, \"n\" in Rust, and PyYAML split the difference -- a parameter named `n` could not be bound in R at all. Every binding must now keep these as the source text. (2) A PRE-EXISTING, DOCUMENTED DIFFERENCE: R, Python and Rust are typed parsers and resolve true/false to booleans; the C++ (rapidyaml) and MATLAB parsers keep every scalar as raw text by design, which is what makes timestamps verbatim for free. So `true` is a boolean in the first three and the string \"true\" in the last two. That is not the bug and is asserted per-binding below.",
+  "strings_every_binding": {
+    "yes_word": "yes",
+    "no_word": "no",
+    "on_word": "on",
+    "off_word": "off",
+    "y_word": "y",
+    "n_word": "n"
+  },
+  "booleans_typed_bindings": {
+    "true_word": true,
+    "false_word": false,
+    "upper_true": true,
+    "title_false": false
+  },
+  "booleans_as_text_rawtext_bindings": {
+    "true_word": "true",
+    "false_word": "false",
+    "upper_true": "TRUE",
+    "title_false": "False"
+  },
+  "parameter_names": [
+    "n",
+    "y",
+    "off",
+    "day"
+  ],
+  "parameter_required_typed": [
+    true,
+    false,
+    false,
+    true
+  ]
+}

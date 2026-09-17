@@ -318,6 +318,35 @@ int main(int argc, char** argv) {
                            it.value().get<std::string>());
     }
 
+    // --- yaml_scalars: YAML 1.2 core-schema booleans, identical everywhere ---
+    okf::Ingested ingy = okf::ingest((here / "bundles/yaml_scalars").string());
+    json expy = load(here / "expected/yaml_scalars.json");
+    json fmy;
+    for (const okf::Concept& cc : ingy.bundle.concepts) {
+        if (cc.path == "scalars.md") fmy = cc.frontmatter;
+    }
+    for (auto it = expy["strings_every_binding"].begin(); it != expy["strings_every_binding"].end(); ++it) {
+        std::string got = fmy.contains(it.key()) && fmy[it.key()].is_string()
+                              ? fmy[it.key()].get<std::string>() : std::string("<not a string>");
+        check<std::string>("ys.str[" + it.key() + "]", got, it.value().get<std::string>());
+    }
+    // rapidyaml keeps every scalar as raw text, so true/false arrive as strings
+    // here. That is by design (it is what makes timestamps verbatim for free)
+    // and is asserted as such rather than papered over.
+    for (auto it = expy["booleans_as_text_rawtext_bindings"].begin();
+         it != expy["booleans_as_text_rawtext_bindings"].end(); ++it) {
+        std::string got = fmy.contains(it.key()) && fmy[it.key()].is_string()
+                              ? fmy[it.key()].get<std::string>() : std::string("<not a string>");
+        check<std::string>("ys.rawbool[" + it.key() + "]", got, it.value().get<std::string>());
+    }
+    {
+        std::vector<std::string> names;
+        for (const json& prm : fmy["parameters"]) names.push_back(prm["name"].get<std::string>());
+        std::vector<std::string> want;
+        for (const json& v : expy["parameter_names"]) want.push_back(v.get<std::string>());
+        check<std::vector<std::string>>("ys.parameter_names", names, want);
+    }
+
     // traversal-guard unit check (member name validation is pure string logic)
     try {
         okf::Fetched bad = okf::fetch((here / "bundles/store/../nope.tar.gz").string());

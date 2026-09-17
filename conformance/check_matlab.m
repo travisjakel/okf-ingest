@@ -242,6 +242,39 @@ else
     chk('v02a.shape.verified_is_cell', iscell(vrfa) && numel(vrfa) == 2, true);
 end
 
+% --- yaml_scalars: the YAML 1.1 words must never become booleans -----------
+% The MATLAB subset parser keeps every scalar as raw text, so true/false arrive
+% as strings here too; that is by design and is asserted as such.
+ingy = okf.ingest(fullfile(here, 'bundles', 'yaml_scalars'));
+rawy = fileread(fullfile(here, 'expected', 'yaml_scalars.json'));
+expy = jsondecode(rawy);
+fmy = [];
+for j = 1:numel(ingy.bundle.concepts)
+    if strcmp(ingy.bundle.concepts(j).path, 'scalars.md')
+        fmy = ingy.bundle.concepts(j).frontmatter;
+    end
+end
+if ~isa(fmy, 'containers.Map')
+    fails{end + 1} = 'ys.shape: scalars.md frontmatter did not parse';
+else
+    sk = fieldnames(expy.strings_every_binding);
+    for i = 1:numel(sk)
+        chk(sprintf('ys.str[%s]', sk{i}), fmy(sk{i}), expy.strings_every_binding.(sk{i}));
+    end
+    bk = fieldnames(expy.booleans_as_text_rawtext_bindings);
+    for i = 1:numel(bk)
+        chk(sprintf('ys.rawbool[%s]', bk{i}), fmy(bk{i}), ...
+            expy.booleans_as_text_rawtext_bindings.(bk{i}));
+    end
+    prm = fmy('parameters');
+    got = cell(1, numel(prm));
+    for i = 1:numel(prm)
+        pi_ = prm{i};
+        got{i} = pi_('name');
+    end
+    chk('ys.parameter_names', got, expy.parameter_names');
+end
+
 % --- rank (Personalized PageRank: exact, deterministic, parity-locked) ---
 ingr = okf.ingest(fullfile(here, 'bundles', 'store'));
 expr = jsondecode(fileread(fullfile(here, 'expected', 'rank.json')));
