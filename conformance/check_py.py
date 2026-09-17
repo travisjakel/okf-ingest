@@ -177,6 +177,8 @@ for k, want in expy["strings_every_binding"].items():
     check("ys.str[" + k + "]", fmy.get(k), want)
 for k, want in expy["booleans_typed_bindings"].items():
     check("ys.bool[" + k + "]", fmy.get(k), want)
+for k, want in expy["integers_typed_bindings"].items():
+    check("ys.int[" + k + "]", fmy.get(k), want)
 check("ys.parameter_names", [p["name"] for p in fmy["parameters"]], expy["parameter_names"])
 check("ys.parameter_required", [p["required"] for p in fmy["parameters"]],
       expy["parameter_required_typed"])

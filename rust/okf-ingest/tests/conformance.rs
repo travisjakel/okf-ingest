@@ -324,6 +324,13 @@ fn conformance() {
             want.as_str().map(str::to_string),
         );
     }
+    for (k, want) in expy["integers_typed_bindings"].as_object().unwrap() {
+        c.check(
+            &format!("ys.int[{k}]"),
+            fmy.get(k).and_then(|v| v.as_i64()),
+            want.as_i64(),
+        );
+    }
     for (k, want) in expy["booleans_typed_bindings"].as_object().unwrap() {
         c.check(
             &format!("ys.bool[{k}]"),

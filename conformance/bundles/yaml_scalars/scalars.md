@@ -21,6 +21,9 @@ true_word: true
 false_word: false
 upper_true: TRUE
 title_false: False
+big_int: 835118974644
+small_int: 42
+negative_big: -835118974644
 ---
 
 # Computation

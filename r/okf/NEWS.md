@@ -1,3 +1,30 @@
+# okf 0.12.3
+
+* **An integer too large for R no longer becomes `NA`.** R's `yaml` parses a
+  bare integer as a 32-bit R `integer`, so a frontmatter value of
+  `sha1: 835118974644` -- a real one, in a `harbinger_wiki` note -- came back
+  as `NA` with a warning while Python and Rust returned the number. Outright
+  data loss, and the fourth cross-binding scalar disagreement in this series
+  after the YAML 1.1 booleans of 0.12.1.
+
+  R now widens to a double when the value does not fit. That, rather than the
+  source text, is the right landing place: the catalog's `frontmatter` JSON is
+  the cross-binding contract, and a double serializes as `835118974644` and
+  matches the other bindings, whereas a verbatim string would serialize quoted
+  and break the parity it was meant to restore. Doubles are exact to 2^53
+  (~9.0e15), far beyond any plausible frontmatter value.
+
+* `bundles/yaml_scalars` gains `big_int` / `small_int` / `negative_big`,
+  asserted in the three typed bindings -- for the same reason the booleans are,
+  since the C++ and MATLAB parsers keep every scalar as raw text by design.
+
+* Found by sweeping the estate for YAML that R cannot hold, after the same
+  32-bit coercion silently turned a market cap of `5,725,181,640,000` into
+  `"NA"` in a generated bundle that still validated at zero errors. The sweep
+  found exactly two affected files in ~19,300 concepts and 30-odd R YAML
+  readers, which is the useful part: the exposure is real but narrow, and now
+  it is closed at the parser rather than at each reader.
+
 # okf 0.12.2
 
 * **References inside fenced code blocks are no longer extracted.** Markdown

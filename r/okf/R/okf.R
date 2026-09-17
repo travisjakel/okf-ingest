@@ -85,9 +85,27 @@ okf_parse_file <- function(path) {
 # The handlers receive the scalar's SOURCE TEXT, so only `true`/`false` (and
 # their case variants) become logical and everything else stays the string the
 # author wrote. Locked cross-binding by the `yaml_scalars` fixture.
+# Integers that do not fit R's 32-bit `integer` become doubles, not NA.
+#
+# R's yaml parses a bare integer as an R `integer`, so a frontmatter value of
+# 835118974644 -- a real one, a `sha1:` in a harbinger_wiki note -- came back as
+# NA with a warning, while Python and Rust returned the number. Same family as
+# the YAML 1.1 booleans above: a scalar that means different things in different
+# bindings, and here it is outright data loss rather than a type quibble.
+#
+# A double is the right landing place rather than the source text, because the
+# catalog's `frontmatter` JSON is the cross-binding contract: a double
+# serializes as 835118974644 and matches Python and Rust, whereas a string
+# would serialize quoted and break the parity it is meant to restore. Doubles
+# are exact to 2^53 (~9.0e15), which is far beyond any plausible frontmatter
+# value; past that a value would round, and nothing in OKF asks for one.
 OKF_YAML_HANDLERS <- list(
   `bool#yes` = function(x) if (x %in% c("true", "True", "TRUE")) TRUE else x,
-  `bool#no`  = function(x) if (x %in% c("false", "False", "FALSE")) FALSE else x
+  `bool#no`  = function(x) if (x %in% c("false", "False", "FALSE")) FALSE else x,
+  int = function(x) {
+    n <- suppressWarnings(as.integer(x))
+    if (is.na(n)) as.numeric(x) else n
+  }
 )
 
 #' Extract markdown link targets from a concept body (OKF cross-links, sec. 4).
