@@ -1,3 +1,39 @@
+# okf 0.12.2
+
+* **References inside fenced code blocks are no longer extracted.** Markdown
+  does not linkify fenced content, so neither do we. This only became
+  consequential with SPEC 10, which makes code in the body the NORMAL case for
+  an Attested Computation: R's `[[ ]]` indexing syntax is literally the
+  wikilink syntax, so a real `runtime: r` bundle emitted three phantom
+  wikilinks out of a single function.
+
+  Phantom *broken* references are only noise. The hazard is the other case, and
+  the fixture demonstrates it: a reference in code that happens to match a real
+  concept becomes a **silently false edge** in the graph -- the same class of
+  wrong-provenance error the 0.12.0 frontmatter-edge work existed to fix.
+
+  Fenced blocks only, by measurement rather than taste. Indented (4-space)
+  blocks are NOT masked: that indentation is also ordinary nested-list
+  continuation, where links are real. Inline code spans are NOT masked either
+  -- authors put backticks around a reference for emphasis and mean it, and
+  masking spans would have dropped **8 resolving edges** in a 219-concept wiki.
+
+  Impact measured before shipping, across all 12 conformance fixtures, the four
+  reference bundles, and three real wikis: **zero change everywhere except the
+  two places it should change.** One edge disappears from a hand-authored wiki
+  -- an illustrative `[Page](path.md)` inside a fenced example block in
+  `schema.md`, which was a false edge -- and three disappear from the
+  Attested Computation bundle that prompted the fix. The LOLO retrieval bench
+  is unmoved.
+
+* New fixture `bundles/code_fences`, locked in all five bindings. It carries a
+  concept whose name a phantom reference collides with, so the test is that a
+  *resolving* false edge does not appear, not merely that a warning does not.
+
+* Found by building a package on top of this one and pointing it at the
+  estate's own trusted calculations -- the third defect found that way, after
+  the 0.12.0 frontmatter edges and the 0.12.1 YAML booleans.
+
 # okf 0.12.1
 
 * **Cross-binding parity fix: YAML 1.1 booleans.** `y`, `Y`, `yes`, `n`, `N`,

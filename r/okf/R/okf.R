@@ -96,9 +96,49 @@ OKF_YAML_HANDLERS <- list(
 #' @return Character vector of raw link targets (as written).
 #' @export
 okf_extract_links <- function(body) {
+  body <- .okf_mask_fences(body)
   regs <- regmatches(body, gregexpr("\\]\\(\\s*([^)\\s]+)", body, perl = TRUE))[[1]]
   if (!length(regs)) return(character(0))
   sub("^\\]\\(\\s*", "", regs)
+}
+
+# Blank out fenced code blocks before extracting references.
+#
+# Markdown does not linkify fenced content, so neither should we -- but this
+# only became consequential with SPEC 10, which makes code in the body the
+# NORMAL case for an Attested Computation. Measured on a real `runtime: r`
+# bundle: R's `flat[[paste0("knock_on_", src)]]` indexing syntax is literally
+# `[[...]]`, so three phantom wikilinks were extracted from one computation.
+# Phantom BROKEN links are only noise; the real hazard is a `[[name]]` in code
+# that happens to match a concept, which becomes a silently false edge in the
+# graph -- the same class of wrong-provenance error the frontmatter-edge work
+# existed to fix.
+#
+# Fenced blocks only. Indented (4-space) blocks are deliberately NOT masked:
+# that indentation is also ordinary nested-list continuation, where links are
+# real. Inline code spans are likewise left alone.
+#
+# A simplified CommonMark rule, chosen so five bindings can implement it
+# identically: a line of >=3 backticks or tildes (indented up to 3 spaces)
+# opens; a line of >=N of the SAME character with nothing else on it closes.
+# An unclosed fence masks to the end of the body.
+.okf_mask_fences <- function(body) {
+  if (!length(body) || !nzchar(body)) return(body)
+  lines <- strsplit(body, "\n", fixed = TRUE)[[1]]
+  open_ch <- ""; open_len <- 0L
+  for (i in seq_along(lines)) {
+    m <- regmatches(lines[i], regexec("^[ ]{0,3}(`{3,}|~{3,})(.*)$", lines[i]))[[1]]
+    if (length(m) == 3L) {
+      ch <- substr(m[2], 1, 1); len <- nchar(m[2])
+      if (!nzchar(open_ch)) {
+        open_ch <- ch; open_len <- len; lines[i] <- ""; next
+      } else if (ch == open_ch && len >= open_len && !nzchar(trimws(m[3]))) {
+        open_ch <- ""; open_len <- 0L; lines[i] <- ""; next
+      }
+    }
+    if (nzchar(open_ch)) lines[i] <- ""
+  }
+  paste(lines, collapse = "\n")
 }
 
 #' Extract `[[wikilink]]` targets from a concept body.
@@ -113,6 +153,7 @@ okf_extract_links <- function(body) {
 #' @return Character vector of raw wikilink references (as written).
 #' @export
 okf_extract_wikilinks <- function(body) {
+  body <- .okf_mask_fences(body)
   m <- regmatches(body, gregexpr("\\[\\[([^]]+)\\]\\]", body, perl = TRUE))[[1]]
   if (!length(m)) return(character(0))
   inner <- sub("^\\[\\[(.*)\\]\\]$", "\\1", m)

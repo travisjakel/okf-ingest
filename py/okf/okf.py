@@ -168,14 +168,61 @@ def parse_file(path: str) -> dict:
     return {"meta": meta, "body": body, "err": None}
 
 
+_FENCE = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})(.*)$")
+
+
+def _mask_fences(body: str) -> str:
+    """Blank out fenced code blocks before extracting references.
+
+    Markdown does not linkify fenced content, so neither do we -- but this only
+    became consequential with SPEC 10, which makes code in the body the NORMAL
+    case for an Attested Computation. Measured on a real `runtime: r` bundle:
+    R's ``flat[[paste0("knock_on_", src)]]`` indexing syntax is literally
+    ``[[...]]``, so three phantom wikilinks came out of one computation.
+    Phantom BROKEN references are only noise; the real hazard is a reference in
+    code that happens to match a concept, which becomes a silently false edge.
+
+    Fenced blocks only. Indented (4-space) blocks are NOT masked -- that
+    indentation is also ordinary nested-list continuation. Inline code spans
+    are NOT masked either: authors put backticks around a reference for
+    emphasis and mean it, and masking spans would have dropped 8 resolving
+    edges in a 219-concept wiki.
+
+    Simplified CommonMark, chosen so five bindings implement it identically: a
+    line of >=3 backticks or tildes (indented up to 3 spaces) opens; a line of
+    >=N of the SAME character with nothing else on it closes. An unclosed fence
+    masks to the end of the body.
+    """
+    if not body:
+        return body
+    lines = body.split("\n")
+    open_ch, open_len = "", 0
+    for i, ln in enumerate(lines):
+        m = _FENCE.match(ln)
+        if m:
+            ch, run = m.group(1)[0], len(m.group(1))
+            if not open_ch:
+                open_ch, open_len = ch, run
+                lines[i] = ""
+                continue
+            if ch == open_ch and run >= open_len and not m.group(2).strip():
+                open_ch, open_len = "", 0
+                lines[i] = ""
+                continue
+        if open_ch:
+            lines[i] = ""
+    return "\n".join(lines)
+
+
 def extract_links(body: str) -> list:
-    return _LINK.findall(body)
+    return _LINK.findall(_mask_fences(body))
 
 
 def extract_wikilinks(body: str) -> list:
     """Extract [[wikilink]] / [[target|display]] references (display + #anchor
     stripped). Resolved by name (id/alias/title/stem), not path — see links()."""
-    return [m.split("|", 1)[0].strip() for m in _WIKILINK.findall(body)]
+    return [m.split("|", 1)[0].strip()
+            for m in _WIKILINK.findall(_mask_fences(body))]
 
 
 def _wiki_index(concepts: list) -> dict:

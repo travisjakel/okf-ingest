@@ -345,6 +345,42 @@ fn conformance() {
         .collect();
     c.check("ys.parameter_names", names, want_names);
 
+    // --- code_fences: references inside fenced code are not extracted ---
+    let ingf = ingest(here.join("bundles/code_fences").to_str().unwrap()).unwrap();
+    let expf = load("expected/code_fences.json");
+    c.check(
+        "cf.n_concepts",
+        ingf.summary.n_concepts as u64,
+        expf["bundle"]["n_concepts"].as_u64().unwrap(),
+    );
+    c.check(
+        "cf.links_total",
+        ingf.summary.links_total as u64,
+        expf["links"]["total"].as_u64().unwrap(),
+    );
+    c.check(
+        "cf.links_broken",
+        ingf.summary.links_broken as u64,
+        expf["links"]["broken"].as_u64().unwrap(),
+    );
+    for bad in expf["must_not_extract"].as_array().unwrap() {
+        let bad = bad.as_str().unwrap();
+        let present = ingf.links.iter().any(|l| l.dst_raw == bad);
+        c.check(&format!("cf.absent[{bad}]"), present, false);
+    }
+    for (key, want) in expf["must_extract"].as_object().unwrap() {
+        if key.starts_with('_') {
+            continue;
+        }
+        let (src, raw) = key.split_once('|').unwrap();
+        let got = ingf
+            .links
+            .iter()
+            .find(|l| l.src_path == src && l.dst_raw == raw)
+            .and_then(|l| l.dst_path.clone());
+        c.check(&format!("cf.{key}"), got, want.as_str().map(str::to_string));
+    }
+
     // --- rank (Personalized PageRank: exact, deterministic, parity-locked) ---
     let ingr = ingest(here.join("bundles/store").to_str().unwrap()).unwrap();
     let expr = load("expected/rank.json");

@@ -1,6 +1,6 @@
 function out = extract_wikilinks(body)
 %EXTRACT_WIKILINKS [[wikilink]] / [[target|display]] refs (display stripped).
-raw = regexp(body, '\[\[([^\]]+)\]\]', 'tokens');
+raw = regexp(okf.internal.mask_fences(body), '\[\[([^\]]+)\]\]', 'tokens');
 out = cell(1, numel(raw));
 for i = 1:numel(raw)
     m = raw{i}{1};

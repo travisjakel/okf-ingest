@@ -196,5 +196,23 @@ chk("ys.parameter_names", as.character(fmy$parameters$name), exy$parameter_names
 chk("ys.parameter_required", as.logical(fmy$parameters$required), exy$parameter_required_typed)
 DBI::dbDisconnect(ry$con, shutdown = TRUE)
 
+# code_fences: references inside fenced code blocks are not extracted.
+rf  <- okf_ingest(file.path(here, "bundles", "code_fences"))
+exf <- jsonlite::fromJSON(file.path(here, "expected", "code_fences.json"))
+chk("cf.n_concepts", rf$summary$n_concepts, exf$bundle$n_concepts)
+chk("cf.conformant", rf$summary$conformant, exf$bundle$conformant)
+chk("cf.links_total", rf$summary$links_total, exf$links$total)
+chk("cf.links_broken", rf$summary$links_broken, exf$links$broken)
+lf <- DBI::dbGetQuery(rf$con, "SELECT src_path, dst_raw, dst_path FROM okf_link")
+for (bad in exf$must_not_extract)
+  chk(paste0("cf.absent[", bad, "]"), bad %in% lf$dst_raw, FALSE)
+for (key in names(exf$must_extract)) {
+  if (startsWith(key, "_")) next
+  pp <- strsplit(key, "|", fixed = TRUE)[[1]]
+  chk(paste0("cf.", key), lf$dst_path[lf$src_path == pp[1] & lf$dst_raw == pp[2]][1],
+      exf$must_extract[[key]])
+}
+DBI::dbDisconnect(rf$con, shutdown = TRUE)
+
 if (length(fails)) { cat("FAIL\n  ", paste(fails, collapse = "\n  "), "\n"); quit(status = 1) }
 cat("PASS — R binding conformant on all fixtures\n")

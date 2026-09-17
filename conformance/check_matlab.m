@@ -275,6 +275,22 @@ else
     chk('ys.parameter_names', got, expy.parameter_names');
 end
 
+% --- code_fences: references inside fenced code are not extracted ---------
+ingf = okf.ingest(fullfile(here, 'bundles', 'code_fences'));
+expf = jsondecode(fileread(fullfile(here, 'expected', 'code_fences.json')));
+chk('cf.n_concepts', ingf.summary.n_concepts, expf.bundle.n_concepts);
+chk('cf.conformant', ingf.summary.conformant, expf.bundle.conformant);
+chk('cf.links_total', ingf.summary.links_total, expf.links.total);
+chk('cf.links_broken', ingf.summary.links_broken, expf.links.broken);
+raws = cell(1, numel(ingf.links));
+for i = 1:numel(ingf.links)
+    raws{i} = ingf.links(i).dst_raw;
+end
+for i = 1:numel(expf.must_not_extract)
+    bad = expf.must_not_extract{i};
+    chk(sprintf('cf.absent[%s]', bad), any(strcmp(bad, raws)), false);
+end
+
 % --- rank (Personalized PageRank: exact, deterministic, parity-locked) ---
 ingr = okf.ingest(fullfile(here, 'bundles', 'store'));
 expr = jsondecode(fileread(fullfile(here, 'expected', 'rank.json')));

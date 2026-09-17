@@ -154,9 +154,75 @@ std::optional<std::string> resolve_link(const std::string& raw, const std::strin
 
 }  // namespace
 
+// Blank out fenced code blocks before extracting references.
+//
+// Markdown does not linkify fenced content, so neither do we -- but this only
+// became consequential with SPEC 10, which makes code in the body the NORMAL
+// case for an Attested Computation. Measured on a real runtime: r bundle: R's
+// flat[[paste0("knock_on_", src)]] indexing syntax is literally [[...]], so
+// three phantom wikilinks came out of one computation. Phantom BROKEN
+// references are only noise; the real hazard is a reference in code that
+// happens to match a concept, which becomes a silently false edge.
+//
+// Fenced blocks only. Indented (4-space) blocks are NOT masked -- that is also
+// ordinary nested-list continuation. Inline code spans are NOT masked either:
+// authors put backticks around a reference for emphasis and mean it, and
+// masking spans would have dropped 8 resolving edges in a 219-concept wiki.
+//
+// Simplified CommonMark, chosen so five bindings implement it identically: a
+// line of >=3 backticks or tildes (indented up to 3 spaces) opens; a line of
+// >=N of the SAME character with nothing else on it closes. An unclosed fence
+// masks to the end of the body.
+std::string mask_fences(const std::string& body) {
+    std::vector<std::string> out;
+    char open_ch = 0;
+    std::size_t open_len = 0;
+    std::size_t pos = 0;
+    while (true) {
+        std::size_t nl = body.find('\n', pos);
+        std::string line = body.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+
+        std::size_t indent = line.find_first_not_of(' ');
+        if (indent == std::string::npos) indent = line.size();
+        bool handled = false;
+        if (indent <= 3 && indent < line.size() &&
+            (line[indent] == '`' || line[indent] == '~')) {
+            char ch = line[indent];
+            std::size_t run = 0;
+            while (indent + run < line.size() && line[indent + run] == ch) ++run;
+            if (run >= 3) {
+                std::string rest = line.substr(indent + run);
+                std::string trimmed = trim(rest);
+                if (open_ch == 0) {
+                    open_ch = ch;
+                    open_len = run;
+                    out.emplace_back();
+                    handled = true;
+                } else if (ch == open_ch && run >= open_len && trimmed.empty()) {
+                    open_ch = 0;
+                    open_len = 0;
+                    out.emplace_back();
+                    handled = true;
+                }
+            }
+        }
+        if (!handled) out.push_back(open_ch != 0 ? std::string() : line);
+
+        if (nl == std::string::npos) break;
+        pos = nl + 1;
+    }
+    std::string joined;
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        if (i) joined += "\n";
+        joined += out[i];
+    }
+    return joined;
+}
+
 std::vector<std::string> extract_links(const std::string& body) {
     std::vector<std::string> out;
-    for (auto it = std::sregex_iterator(body.begin(), body.end(), re_link());
+    const std::string masked = mask_fences(body);
+    for (auto it = std::sregex_iterator(masked.begin(), masked.end(), re_link());
          it != std::sregex_iterator(); ++it) {
         out.push_back((*it)[1].str());
     }
@@ -165,7 +231,8 @@ std::vector<std::string> extract_links(const std::string& body) {
 
 std::vector<std::string> extract_wikilinks(const std::string& body) {
     std::vector<std::string> out;
-    for (auto it = std::sregex_iterator(body.begin(), body.end(), re_wikilink());
+    const std::string masked = mask_fences(body);
+    for (auto it = std::sregex_iterator(masked.begin(), masked.end(), re_wikilink());
          it != std::sregex_iterator(); ++it) {
         std::string m = (*it)[1].str();
         out.push_back(trim(m.substr(0, m.find('|'))));

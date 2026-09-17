@@ -25,9 +25,69 @@ fn re_scheme() -> &'static Regex {
 }
 
 /// Markdown link targets: `](target)`.
+/// Blank out fenced code blocks before extracting references.
+///
+/// Markdown does not linkify fenced content, so neither do we -- but this only
+/// became consequential with SPEC 10, which makes code in the body the NORMAL
+/// case for an Attested Computation. Measured on a real `runtime: r` bundle:
+/// R's `flat[[paste0("knock_on_", src)]]` indexing syntax is literally
+/// `[[...]]`, so three phantom wikilinks came out of one computation. Phantom
+/// BROKEN references are only noise; the real hazard is a reference in code
+/// that happens to match a concept, which becomes a silently false edge.
+///
+/// Fenced blocks only. Indented (4-space) blocks are NOT masked -- that
+/// indentation is also ordinary nested-list continuation. Inline code spans are
+/// NOT masked either: authors put backticks around a reference for emphasis and
+/// mean it, and masking spans would have dropped 8 resolving edges in a
+/// 219-concept wiki.
+///
+/// Simplified CommonMark, chosen so five bindings implement it identically: a
+/// line of >=3 backticks or tildes (indented up to 3 spaces) opens; a line of
+/// >=N of the SAME character with nothing else on it closes. An unclosed fence
+/// masks to the end of the body.
+fn mask_fences(body: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut open: Option<(char, usize)> = None;
+    for line in body.split('\n') {
+        let trimmed = line.trim_start_matches(' ');
+        let indent = line.len() - trimmed.len();
+        let first = trimmed.chars().next();
+        let mut handled = false;
+        if indent <= 3 && (first == Some('`') || first == Some('~')) {
+            let ch = first.unwrap();
+            let run = trimmed.chars().take_while(|c| *c == ch).count();
+            if run >= 3 {
+                let rest = &trimmed[run..];
+                match open {
+                    None => {
+                        open = Some((ch, run));
+                        out.push(String::new());
+                        handled = true;
+                    }
+                    Some((och, olen)) if ch == och && run >= olen && rest.trim().is_empty() => {
+                        open = None;
+                        out.push(String::new());
+                        handled = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if handled {
+            continue;
+        }
+        out.push(if open.is_some() {
+            String::new()
+        } else {
+            line.to_string()
+        });
+    }
+    out.join("\n")
+}
+
 pub fn extract_links(body: &str) -> Vec<String> {
     re_link()
-        .captures_iter(body)
+        .captures_iter(&mask_fences(body))
         .map(|c| c[1].to_string())
         .collect()
 }
@@ -36,7 +96,7 @@ pub fn extract_links(body: &str) -> Vec<String> {
 /// Resolved by name (id/alias/title/stem), not path — see [`links`].
 pub fn extract_wikilinks(body: &str) -> Vec<String> {
     re_wikilink()
-        .captures_iter(body)
+        .captures_iter(&mask_fences(body))
         .map(|c| c[1].split('|').next().unwrap_or("").trim().to_string())
         .collect()
 }

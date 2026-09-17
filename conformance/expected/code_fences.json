@@ -1,0 +1,28 @@
+{
+  "bundle": {
+    "n_files": 3,
+    "n_concepts": 2,
+    "n_conformant": 2,
+    "conformant": true
+  },
+  "_note": "Markdown does not linkify fenced content, so neither do we. This only became consequential with SPEC 10, which makes code in the body the NORMAL case for an Attested Computation: R's `[[ ]]` indexing is literally the wikilink syntax, so a `runtime: r` computation emitted three phantom wikilinks from one function. Phantom BROKEN references are noise; the hazard is a reference in code that happens to match a concept, which becomes a silently false graph edge. Fenced blocks only -- indented blocks are ordinary nested-list continuation, and inline spans are how authors emphasise a real reference (masking them would have dropped 8 resolving edges in a 219-concept wiki).",
+  "links": {
+    "total": 8,
+    "broken": 0
+  },
+  "must_not_extract": [
+    "paste0(\"knock_on_\", src)",
+    "src",
+    "target",
+    "phantom-tilde"
+  ],
+  "must_extract": {
+    "_note": "src_path|dst_raw -> resolved dst_path",
+    "fenced.md|target.md": "target.md",
+    "fenced.md|Target": "target.md",
+    "index.md|fenced.md": "fenced.md"
+  },
+  "by_target": {
+    "concept": 8
+  }
+}

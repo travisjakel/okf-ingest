@@ -347,6 +347,34 @@ int main(int argc, char** argv) {
         check<std::vector<std::string>>("ys.parameter_names", names, want);
     }
 
+    // --- code_fences: references inside fenced code are not extracted ---
+    okf::Ingested ingf = okf::ingest((here / "bundles/code_fences").string());
+    json expf = load(here / "expected/code_fences.json");
+    check<std::size_t>("cf.n_concepts", ingf.summary.n_concepts,
+                       expf["bundle"]["n_concepts"].get<std::size_t>());
+    check<std::size_t>("cf.links_total", ingf.summary.links_total,
+                       expf["links"]["total"].get<std::size_t>());
+    check<std::size_t>("cf.links_broken", ingf.summary.links_broken,
+                       expf["links"]["broken"].get<std::size_t>());
+    for (const json& b : expf["must_not_extract"]) {
+        std::string bad = b.get<std::string>();
+        bool present = false;
+        for (const okf::Link& l : ingf.links) {
+            if (l.dst_raw == bad) present = true;
+        }
+        check<bool>("cf.absent[" + bad + "]", present, false);
+    }
+    for (auto it = expf["must_extract"].begin(); it != expf["must_extract"].end(); ++it) {
+        if (!it.key().empty() && it.key()[0] == '_') continue;
+        std::size_t bar = it.key().find('|');
+        std::string src = it.key().substr(0, bar), raw = it.key().substr(bar + 1);
+        std::string got;
+        for (const okf::Link& l : ingf.links) {
+            if (l.src_path == src && l.dst_raw == raw && got.empty()) got = opt_str(l.dst_path);
+        }
+        check<std::string>("cf." + it.key(), got, it.value().get<std::string>());
+    }
+
     // traversal-guard unit check (member name validation is pure string logic)
     try {
         okf::Fetched bad = okf::fetch((here / "bundles/store/../nope.tar.gz").string());

@@ -182,6 +182,24 @@ check("ys.parameter_required", [p["required"] for p in fmy["parameters"]],
       expy["parameter_required_typed"])
 cony.close()
 
+# code_fences: references inside fenced code blocks are not extracted.
+conf, sf = okf.ingest(os.path.join(HERE, "bundles", "code_fences"))
+expf = json.load(open(os.path.join(HERE, "expected", "code_fences.json")))
+check("cf.n_concepts", sf["n_concepts"], expf["bundle"]["n_concepts"])
+check("cf.conformant", sf["conformant"], expf["bundle"]["conformant"])
+check("cf.links_total", sf["links_total"], expf["links"]["total"])
+check("cf.links_broken", sf["links_broken"], expf["links"]["broken"])
+lf = conf.execute("SELECT src_path, dst_raw, dst_path FROM okf_link").fetchall()
+raws = {r[1] for r in lf}
+for bad in expf["must_not_extract"]:
+    check("cf.absent[" + bad + "]", bad in raws, False)
+resolved = {r[0] + "|" + r[1]: r[2] for r in lf}
+for key, want in expf["must_extract"].items():
+    if key.startswith("_"):
+        continue
+    check("cf." + key, resolved.get(key), want)
+conf.close()
+
 if fails:
     print("FAIL\n  " + "\n  ".join(fails)); sys.exit(1)
 print("PASS — Python binding conformant on all fixtures")
