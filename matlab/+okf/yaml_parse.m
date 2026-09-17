@@ -95,6 +95,14 @@ while next_i <= numel(lines)
     end
     dash_indent = numel(tok{1});
     item_text = strtrim(tok{2});
+    % A sequence item that is itself a FLOW map -- '- { name: day, type: string }'.
+    % This is the shape OKF SPEC 10.2 uses for `parameters:` and the one
+    % upstream's own acme_retail bundle writes, so it is not an edge case.
+    if ~isempty(item_text) && item_text(1) == '{'
+        items{end + 1} = flow_map(item_text, line); %#ok<AGROW>
+        next_i = next_i + 1;
+        continue;
+    end
     kv = regexp(item_text, '^([A-Za-z0-9_][A-Za-z0-9_.-]*):\s(.*)$|^([A-Za-z0-9_][A-Za-z0-9_.-]*):$', ...
                 'tokens', 'once');
     if isempty(kv)

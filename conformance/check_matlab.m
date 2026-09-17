@@ -168,6 +168,80 @@ else
     chk('v02.shape.usage_window_from', uw('from'), '2026-06-01');
 end
 
+% --- v0.2 Attested Computation: SPEC 6.2 frontmatter path fields as edges ---
+inga = okf.ingest(fullfile(here, 'bundles', 'v02_attested'));
+expa = jsondecode(fileread(fullfile(here, 'expected', 'v02_attested.json')));
+chk('v02a.n_files', inga.summary.n_files, expa.bundle.n_files);
+chk('v02a.n_concepts', inga.summary.n_concepts, expa.bundle.n_concepts);
+chk('v02a.n_conformant', inga.summary.n_conformant, expa.bundle.n_conformant);
+chk('v02a.conformant', inga.summary.conformant, expa.bundle.conformant);
+chk('v02a.errors', inga.summary.errors, expa.validation.errors);
+chk('v02a.warnings', inga.summary.warnings, expa.validation.warnings);
+chk('v02a.links_total', inga.summary.links_total, expa.links.total);
+chk('v02a.links_broken', inga.summary.links_broken, expa.links.broken);
+for i = 1:numel(expa.validation.forbidden_rules)
+    fr = expa.validation.forbidden_rules{i};
+    present = false;
+    for j = 1:numel(inga.findings)
+        if strcmp(inga.findings(j).rule, fr)
+            present = true;
+        end
+    end
+    chk(sprintf('v02a.no_%s', fr), present, false);
+end
+rcn = fieldnames(expa.validation.rule_counts);
+for i = 1:numel(rcn)
+    got = 0;
+    for j = 1:numel(inga.findings)
+        if strcmp(inga.findings(j).rule, rcn{i})
+            got = got + 1;
+        end
+    end
+    chk(sprintf('v02a.rule[%s]', rcn{i}), got, expa.validation.rule_counts.(rcn{i}));
+end
+kn = fieldnames(expa.links.by_kind);
+for i = 1:numel(kn)
+    got = 0;
+    for j = 1:numel(inga.links)
+        if strcmp(inga.links(j).kind, kn{i})
+            got = got + 1;
+        end
+    end
+    chk(sprintf('v02a.kind[%s]', kn{i}), got, expa.links.by_kind.(kn{i}));
+end
+tn = fieldnames(expa.links.by_target);
+for i = 1:numel(tn)
+    got = 0;
+    for j = 1:numel(inga.links)
+        if strcmp(inga.links(j).target, tn{i})
+            got = got + 1;
+        end
+    end
+    chk(sprintf('v02a.target[%s]', tn{i}), got, expa.links.by_target.(tn{i}));
+end
+% lock the parser extension itself: the Attested Computation shapes survive
+cfm = [];
+for j = 1:numel(inga.bundle.concepts)
+    if strcmp(inga.bundle.concepts(j).path, 'computations/throughput.md')
+        cfm = inga.bundle.concepts(j).frontmatter;
+    end
+end
+if ~isa(cfm, 'containers.Map')
+    fails{end + 1} = 'v02a.shape: throughput.md frontmatter did not parse';
+else
+    chk('v02a.shape.runtime', cfm('runtime'), 'duckdb');
+    ex = cfm('executor');
+    chk('v02a.shape.executor_is_map', isa(ex, 'containers.Map'), true);
+    chk('v02a.shape.executor_resource', ex('resource'), 'skills/run-local.md');
+    prm = cfm('parameters');
+    chk('v02a.shape.parameters_is_cell', iscell(prm) && numel(prm) == 2, true);
+    p1 = prm{1};
+    chk('v02a.shape.param1_name', p1('name'), 'day');
+    chk('v02a.shape.param1_type', p1('type'), 'string');
+    vrfa = cfm('verified');
+    chk('v02a.shape.verified_is_cell', iscell(vrfa) && numel(vrfa) == 2, true);
+end
+
 % --- rank (Personalized PageRank: exact, deterministic, parity-locked) ---
 ingr = okf.ingest(fullfile(here, 'bundles', 'store'));
 expr = jsondecode(fileread(fullfile(here, 'expected', 'rank.json')));

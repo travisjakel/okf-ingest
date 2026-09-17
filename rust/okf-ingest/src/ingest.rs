@@ -49,7 +49,7 @@ pub fn ingest_bundle(bundle: Bundle) -> Ingested {
             .filter(|f| f.severity == Severity::Warn)
             .count(),
         links_total: lk.len(),
-        links_broken: lk.iter().filter(|l| !l.resolved).count(),
+        links_broken: lk.iter().filter(|l| l.target == "missing").count(),
     };
     Ingested {
         bundle,

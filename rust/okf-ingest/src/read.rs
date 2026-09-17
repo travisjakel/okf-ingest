@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf, MAIN_SEPARATOR as MAIN_SEP};
 
 use crate::links::{extract_links, extract_wikilinks};
 use crate::model::{Bundle, Concept, OkfError, SourceKind, RESERVED};
@@ -20,17 +20,20 @@ fn canon_str(root: &Path) -> std::io::Result<String> {
     Ok(s.strip_prefix("//?/").map(str::to_string).unwrap_or(s))
 }
 
-fn walk_md(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+fn walk_md(dir: &Path, out: &mut Vec<PathBuf>, all: &mut Vec<PathBuf>) -> std::io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
         let path = entry.path();
         if path.is_dir() {
             if !name.starts_with('.') {
-                walk_md(&path, out)?;
+                walk_md(&path, out, all)?;
             }
-        } else if name.ends_with(".md") && !name.starts_with('.') {
-            out.push(path);
+        } else if !name.starts_with('.') {
+            all.push(path.clone());
+            if name.ends_with(".md") {
+                out.push(path);
+            }
         }
     }
     Ok(())
@@ -45,7 +48,14 @@ pub fn read_bundle(
     let root_str = canon_str(root)?;
     let root_path = PathBuf::from(&root_str);
     let mut files = Vec::new();
-    walk_md(&root_path, &mut files)?;
+    let mut all_paths = Vec::new();
+    walk_md(&root_path, &mut files, &mut all_paths)?;
+    let mut all_files: BTreeSet<String> = BTreeSet::new();
+    for f in &all_paths {
+        if let Ok(r) = f.strip_prefix(&root_path) {
+            all_files.insert(r.to_string_lossy().replace(MAIN_SEP, "/"));
+        }
+    }
 
     let mut concepts: Vec<Concept> = Vec::with_capacity(files.len());
     for f in &files {
@@ -119,6 +129,7 @@ pub fn read_bundle(
         source_kind,
         concepts,
         known,
+        files: all_files,
     })
 }
 

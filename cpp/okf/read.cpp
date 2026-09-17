@@ -22,14 +22,16 @@ std::string slashify(const fs::path& p) {
     return s;
 }
 
-void walk_md(const fs::path& dir, std::vector<fs::path>& out) {
+void walk_md(const fs::path& dir, std::vector<fs::path>& out, std::vector<fs::path>& all) {
     for (const fs::directory_entry& entry : fs::directory_iterator(dir)) {
         std::string name = entry.path().filename().string();
         if (entry.is_directory()) {
-            if (!name.empty() && name[0] != '.') walk_md(entry.path(), out);
-        } else if (name.size() > 3 && name[0] != '.' &&
-                   name.compare(name.size() - 3, 3, ".md") == 0) {
-            out.push_back(entry.path());
+            if (!name.empty() && name[0] != '.') walk_md(entry.path(), out, all);
+        } else if (!name.empty() && name[0] != '.') {
+            all.push_back(entry.path());
+            if (name.size() > 3 && name.compare(name.size() - 3, 3, ".md") == 0) {
+                out.push_back(entry.path());
+            }
         }
     }
 }
@@ -49,10 +51,13 @@ std::optional<std::string> scalar(const json& fm, const char* key) {
 Bundle read_bundle(const std::string& root, const std::string& source_kind) {
     fs::path root_path = fs::canonical(fs::path(root));
     std::string root_str = slashify(root_path);
-    std::vector<fs::path> files;
-    walk_md(root_path, files);
+    std::vector<fs::path> files, all_paths;
+    walk_md(root_path, files, all_paths);
 
     Bundle b;
+    for (const fs::path& f : all_paths) {
+        b.files.insert(slashify(fs::relative(f, root_path)));
+    }
     b.root = root_str;
     b.source_kind = source_kind;
     b.concepts.reserve(files.size());

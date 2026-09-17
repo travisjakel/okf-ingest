@@ -54,16 +54,25 @@ struct Bundle {
     std::string source_kind = "dir";  // dir | git | tar
     std::vector<Concept> concepts;    // sorted by path (byte order)
     std::set<std::string> known;
+    // Every file in the tree, not only concepts: SPEC 6.2 path-valued fields
+    // and SPEC 6.3 references/ point at non-markdown artifacts (an attester
+    // .py, a computation .sql). Those are real targets, not broken links.
+    std::set<std::string> files;
 };
 
 struct Link {
     std::string src_path, dst_raw;
     std::optional<std::string> dst_path;
     bool resolved = false;
+    // body | wikilink | resource | source | computation | executor | attester
+    std::string kind;
+    // concept | file | scope | missing
+    std::string target;
 };
 
 struct Finding {
-    std::string path, severity, rule, message;  // severity: "error" | "warn"
+    // severity: "error" | "warn" | "info"
+    std::string path, severity, rule, message;
 };
 
 struct Summary {
@@ -98,6 +107,14 @@ std::string content_hash(const std::string& body);
 std::vector<std::string> extract_links(const std::string& body);
 std::vector<std::string> extract_wikilinks(const std::string& body);
 std::vector<Link> links(const Bundle& b);
+// Path-valued frontmatter fields (SPEC 6.2), in a fixed order: (kind, raw).
+std::vector<std::pair<std::string, std::string>> fm_paths(const json& fm);
+// A sources[].resource MAY be a scope descriptor, not a path (SPEC 5.1).
+bool is_scope(const std::string& raw);
+// SPEC 6.2 resolution, then a bundle-root fallback. Returns (path, how) where
+// how is "spec" or "root"; nullopt when nothing resolves.
+std::optional<std::pair<std::string, std::string>> resolve_path(
+    const std::string& raw, const std::string& src_rel, const std::set<std::string>& targets);
 
 // ---- validate / read / ingest --------------------------------------------
 

@@ -1,3 +1,70 @@
+# okf (development version)
+
+Measured against the four reference bundles in
+`GoogleCloudPlatform/open-knowledge-format`, which moved to its own repository
+on 2026-08-14 (the copy under `knowledge-catalog/okf/` is retired). The spec is
+still v0.2; what changed is that upstream now ships bundles exercising the v0.2
+families, and running our own validator over them found two real defects.
+
+* **`timestamp_not_iso8601` no longer false-fires.** SPEC 5 requires an ISO 8601
+  datetime with an explicit UTC offset; upstream made that literal on 2026-08-21
+  and the bundles now emit `+00:00`. The pattern demanded a trailing `Z`, so it
+  flagged **44 of 44 concepts** across `ga4`, `stackoverflow` and
+  `crypto_bitcoin`. It now accepts `Z`, `+/-HH:MM` and `+/-HHMM` with optional
+  fractional seconds, and still rejects a bare local datetime. All four upstream
+  bundles now validate with zero findings.
+* **The path-valued frontmatter fields of SPEC 6.2 are graph edges.**
+  `resource`, `sources[].resource`, `computation`, `executor.resource` and
+  `attester.resource` carry the derivation and execution edges and appear
+  nowhere in the body. On `acme_retail` that is 12 edges against 30 body edges;
+  before this, `okf_impact("policies/revenue-recognition.md")` returned a single
+  inbound edge — the policy's own directory index — while both Attested
+  Computations and both Metrics deriving from it were invisible. It now returns
+  all six. `okf_rank`, `okf_context`, `okf_backlinks` and the orphan lint all
+  inherit the fix.
+* **`okf_link` gains `kind` and `target`.** `kind` is
+  `body`/`wikilink`/`resource`/`source`/`computation`/`executor`/`attester`;
+  `target` is `concept` (the only case that forms a graph edge), `file` (a real
+  non-concept file in the bundle), `scope` (a SPEC 5.1 scope descriptor, not a
+  path) or `missing`. A reference to a real non-concept file — an attester
+  `.py`, a computation `.sql`, exactly what SPEC 6.2/6.3 describe — was reported
+  as a broken link; it is now an `info`-level `non_concept_target`, and
+  `links_broken` counts only genuinely missing targets. An unresolved
+  frontmatter path is `broken_reference` rather than `broken_link`.
+* **New `info` severity.** It is neither an error nor a warning and never enters
+  the warning count. (Two bindings had to be corrected for this: the C++ and
+  MATLAB summaries counted everything non-error as a warning.)
+* **Root-relative frontmatter paths are accepted, and reported.** SPEC 6.2 says
+  a bundle-relative path begins with `/`, but upstream's own bundles write them
+  without it: **12 of 12** frontmatter paths in `acme_retail` resolve against
+  the bundle root and **0 of 12** resolve the spec-literal way, so a
+  spec-literal consumer finds none of these edges. Resolution tries the spec
+  reading first, falls back to the root, and emits `path_root_relative` (info)
+  when the fallback is what worked — permissive per SPEC 11, and legible to a
+  producer. The bundles and the spec disagree here; worth an upstream issue.
+* New conformance fixture `bundles/v02_attested` (ours, not vendored, so we do
+  not track upstream churn), locked in all five bindings. It covers both
+  computation forms (inline `# Computation` fence and `computation:` by path),
+  every frontmatter edge kind, a non-concept target, a scope descriptor, a
+  genuinely missing reference, `verified` as a bare mapping *and* as a list,
+  `status` draft/stable/deprecated, `stale_after`, and offset timestamps in
+  `Z` / `+00:00` / `-07:00` form.
+* MATLAB: the YAML-subset parser now handles a block sequence whose items are
+  **flow maps** (`- { name: day, type: string, required: true }`). This is not
+  an edge case: it is the shape SPEC 10.2 uses for `parameters:` and the one
+  upstream's `acme_retail` writes, so the binding previously could not read a
+  real Attested Computation's parameters.
+* `okf_ollama_embedder()` resolves its endpoint from the environment
+  (`url=` / `LLM_EMBED_URL` / `LLM_LOCAL_BACKEND=llamaswap` / `OLLAMA_URL`) and
+  speaks whichever of the Ollama or OpenAI embedding shapes the resolved path
+  implies, mirroring `okf.rag._embed_endpoint`. A host that names `OLLAMA_URL`
+  is unaffected; `options(okf.embed_texts=)` overrides with a custom backend.
+* `bin/okf.R` refuses to run when an installed `okf` differs in version from
+  the source tree the script lives in, instead of silently preferring the
+  installed package. Set `OKF_ALLOW_VERSION_MISMATCH=1` to override.
+* Docs: the spec links point at the new repository; the four surfaces still
+  claiming v0.1 conformance now say v0.2.
+
 # okf 0.11.0
 
 * OKF spec v0.2 core support, in all five bindings: the concept `timestamp`

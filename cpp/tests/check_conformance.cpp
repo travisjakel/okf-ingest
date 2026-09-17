@@ -248,6 +248,76 @@ int main(int argc, char** argv) {
     okf::Diff d0 = okf::diff(okf::DiffSide::from_ingested(ingd), okf::DiffSide::from_dir(da));
     check<bool>("diff.drift_identical", d0.identical, true);
 
+    // --- v0.2 Attested Computation: SPEC 6.2 frontmatter path fields as edges ---
+    okf::Ingested inga = okf::ingest((here / "bundles/v02_attested").string());
+    json expa = load(here / "expected/v02_attested.json");
+    check<std::size_t>("v02a.n_files", inga.summary.n_files,
+                       expa["bundle"]["n_files"].get<std::size_t>());
+    check<std::size_t>("v02a.n_concepts", inga.summary.n_concepts,
+                       expa["bundle"]["n_concepts"].get<std::size_t>());
+    check<std::size_t>("v02a.n_conformant", inga.summary.n_conformant,
+                       expa["bundle"]["n_conformant"].get<std::size_t>());
+    check<bool>("v02a.conformant", inga.summary.conformant,
+                expa["bundle"]["conformant"].get<bool>());
+    check<std::size_t>("v02a.errors", inga.summary.errors,
+                       expa["validation"]["errors"].get<std::size_t>());
+    check<std::size_t>("v02a.warnings", inga.summary.warnings,
+                       expa["validation"]["warnings"].get<std::size_t>());
+    check<std::size_t>("v02a.links_total", inga.summary.links_total,
+                       expa["links"]["total"].get<std::size_t>());
+    check<std::size_t>("v02a.links_broken", inga.summary.links_broken,
+                       expa["links"]["broken"].get<std::size_t>());
+    for (const json& r : expa["validation"]["forbidden_rules"]) {
+        std::string rule = r.get<std::string>();
+        bool present = false;
+        for (const okf::Finding& f : inga.findings) {
+            if (f.rule == rule) present = true;
+        }
+        check<bool>("v02a.no_" + rule, present, false);
+    }
+    for (auto it = expa["validation"]["rule_counts"].begin();
+         it != expa["validation"]["rule_counts"].end(); ++it) {
+        std::size_t got = 0;
+        for (const okf::Finding& f : inga.findings) {
+            if (f.rule == it.key()) ++got;
+        }
+        check<std::size_t>("v02a.rule[" + it.key() + "]", got, it.value().get<std::size_t>());
+    }
+    for (auto it = expa["links"]["by_kind"].begin(); it != expa["links"]["by_kind"].end(); ++it) {
+        std::size_t got = 0;
+        for (const okf::Link& l : inga.links) {
+            if (l.kind == it.key()) ++got;
+        }
+        check<std::size_t>("v02a.kind[" + it.key() + "]", got, it.value().get<std::size_t>());
+    }
+    for (auto it = expa["links"]["by_target"].begin(); it != expa["links"]["by_target"].end();
+         ++it) {
+        std::size_t got = 0;
+        for (const okf::Link& l : inga.links) {
+            if (l.target == it.key()) ++got;
+        }
+        check<std::size_t>("v02a.target[" + it.key() + "]", got, it.value().get<std::size_t>());
+    }
+    for (auto it = expa["resolutions"].begin(); it != expa["resolutions"].end(); ++it) {
+        if (!it.key().empty() && it.key()[0] == '_') continue;
+        std::size_t bar = it.key().find('|');
+        std::string src = it.key().substr(0, bar), raw = it.key().substr(bar + 1);
+        std::string got;
+        for (const okf::Link& l : inga.links) {
+            if (l.src_path == src && l.dst_raw == raw) got = opt_str(l.dst_path);
+        }
+        check<std::string>("v02a." + it.key(), got, it.value().get<std::string>());
+    }
+    for (auto it = expa["timestamps"].begin(); it != expa["timestamps"].end(); ++it) {
+        if (!it.key().empty() && it.key()[0] == '_') continue;
+        std::string got;
+        for (const okf::Concept& c : inga.bundle.concepts) {
+            if (c.path == it.key()) got = opt_str(c.timestamp);
+        }
+        check<std::string>("v02a.timestamp[" + it.key() + "]", got,
+                           it.value().get<std::string>());
+    }
+
     // traversal-guard unit check (member name validation is pure string logic)
     try {
         okf::Fetched bad = okf::fetch((here / "bundles/store/../nope.tar.gz").string());

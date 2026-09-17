@@ -60,6 +60,10 @@ pub struct Bundle {
     /// Sorted by `path` (byte order) — load-bearing for PPR determinism.
     pub concepts: Vec<Concept>,
     pub known: BTreeSet<String>,
+    /// Every file in the tree, not only concepts: SPEC 6.2 path-valued fields
+    /// and SPEC 6.3 `references/` point at non-markdown artifacts (an attester
+    /// .py, a computation .sql). Those are real targets, not broken links.
+    pub files: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,12 +72,17 @@ pub struct Link {
     pub dst_raw: String,
     pub dst_path: Option<String>,
     pub resolved: bool,
+    /// body | wikilink | resource | source | computation | executor | attester
+    pub kind: String,
+    /// concept | file | scope | missing
+    pub target: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     Error,
     Warn,
+    Info,
 }
 
 impl Severity {
@@ -81,6 +90,7 @@ impl Severity {
         match self {
             Severity::Error => "error",
             Severity::Warn => "warn",
+            Severity::Info => "info",
         }
     }
 }

@@ -9,7 +9,12 @@
 namespace okf {
 
 std::vector<Finding> validate(const Bundle& b) {
-    static const std::regex re_iso(R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$)");
+    // SPEC 5: every timestamp-valued key is an ISO 8601 datetime with an
+    // explicit UTC offset. Upstream made this literal on 2026-08-21 and the
+    // reference bundles now emit "+00:00", so a trailing-Z-only pattern
+    // rejected 44 of 44 conformant concepts. A bare local datetime still
+    // fails: the offset is the point of the rule.
+    static const std::regex re_iso(R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$)");
     std::vector<Finding> out;
     auto add = [&out](const std::string& path, const char* sev, const char* rule,
                       const std::string& msg) {
@@ -40,8 +45,36 @@ std::vector<Finding> validate(const Bundle& b) {
 
     std::vector<Link> lk_all = links(b);
     for (const Link& lk : lk_all) {
-        if (!lk.resolved) {
+        if (lk.target == "concept" || lk.target == "scope") continue;
+        if (lk.target == "file") {
+            // The target exists, it is simply not a concept (an attester .py, a
+            // computation .sql). SPEC 6.2 and 6.3 expect exactly this.
+            add(lk.src_path, "info", "non_concept_target",
+                "reference resolves to a non-concept file: " + lk.dst_raw);
+        } else if (lk.kind == "body" || lk.kind == "wikilink") {
             add(lk.src_path, "warn", "broken_link", "unresolved link: " + lk.dst_raw);
+        } else {
+            add(lk.src_path, "warn", "broken_reference",
+                "unresolved " + lk.kind + " path: " + lk.dst_raw);
+        }
+    }
+
+    // A frontmatter path that resolves only against the bundle root, though
+    // SPEC 6.2 reserves that meaning for a leading slash. Reported so a
+    // producer can fix it; consumed regardless (permissive, SPEC 11).
+    const std::set<std::string>& targets = b.files.empty() ? b.known : b.files;
+    for (const Concept& c : b.concepts) {
+        for (const auto& fp : fm_paths(c.frontmatter)) {
+            const std::string& kind = fp.first;
+            const std::string& raw = fp.second;
+            if (!raw.empty() && raw[0] == '/') continue;
+            if (kind == "source" && is_scope(raw)) continue;
+            auto r = resolve_path(raw, c.path, targets);
+            if (r && r->second == "root") {
+                add(c.path, "info", "path_root_relative",
+                    kind + " path resolves against the bundle root, not the concept " +
+                        "directory; SPEC 6.2 reserves that for a leading slash: " + raw);
+            }
         }
     }
 

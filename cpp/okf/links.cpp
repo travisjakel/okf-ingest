@@ -173,21 +173,101 @@ std::vector<std::string> extract_wikilinks(const std::string& body) {
     return out;
 }
 
+std::vector<std::pair<std::string, std::string>> fm_paths(const json& fm) {
+    std::vector<std::pair<std::string, std::string>> out;
+    if (!fm.is_object()) return out;
+    auto push = [&out](const char* kind, const json& v) {
+        if (v.is_string()) {
+            std::string s = v.get<std::string>();
+            if (!s.empty()) out.emplace_back(kind, s);
+        }
+    };
+    auto at = [&fm](const char* k) -> json {
+        auto it = fm.find(k);
+        return it == fm.end() ? json(nullptr) : *it;
+    };
+    push("resource", at("resource"));
+    push("computation", at("computation"));
+    json ex = at("executor");
+    if (ex.is_object()) push("executor", ex.contains("resource") ? ex["resource"] : json(nullptr));
+    json at_ = at("attester");
+    if (at_.is_object()) push("attester", at_.contains("resource") ? at_["resource"] : json(nullptr));
+    json ss = at("sources");
+    if (ss.is_array()) {
+        for (const json& s : ss) {
+            if (s.is_object() && s.contains("resource")) push("source", s["resource"]);
+        }
+    } else if (ss.is_object() && ss.contains("resource")) {
+        push("source", ss["resource"]);
+    }
+    return out;
+}
+
+bool is_scope(const std::string& raw) {
+    for (unsigned char ch : raw) {
+        if (std::isspace(ch)) return true;
+    }
+    return false;
+}
+
+std::optional<std::pair<std::string, std::string>> resolve_path(
+    const std::string& raw, const std::string& src_rel, const std::set<std::string>& targets) {
+    std::string t = before_hash(raw);
+    std::string spec;
+    if (!t.empty() && t[0] == '/') {
+        spec = norm(t.substr(1));
+    } else {
+        std::size_t slash = src_rel.rfind('/');
+        spec = norm(slash == std::string::npos ? t : src_rel.substr(0, slash) + "/" + t);
+    }
+    if (targets.count(spec)) return std::make_pair(spec, std::string("spec"));
+    std::string root = norm(!t.empty() && t[0] == '/' ? t.substr(1) : t);
+    if (targets.count(root)) return std::make_pair(root, std::string("root"));
+    return std::nullopt;
+}
+
+// The concept graph. Three edge sources, in this order: markdown links,
+// wikilinks, and the path-valued frontmatter fields of SPEC 6.2. The last group
+// carries the derivation and execution edges, which appear nowhere in the body.
 std::vector<Link> links(const Bundle& b) {
     WikiIndex idx = wiki_index(b.concepts);
+    const std::set<std::string>& targets = b.files.empty() ? b.known : b.files;
     std::vector<Link> out;
     for (const Concept& c : b.concepts) {
         for (const std::string& raw : c.links_raw) {
             if (is_external(raw)) continue;
             std::optional<std::string> dst = resolve_link(raw, c.path, b.known);
-            out.push_back(Link{c.path, raw, dst, dst.has_value()});
+            std::string target = dst ? "concept"
+                                     : (resolve_path(raw, c.path, targets) ? "file" : "missing");
+            out.push_back(Link{c.path, raw, dst, dst.has_value(), "body", target});
         }
         for (const std::string& raw : c.wikilinks_raw) {
             std::optional<std::string> dst = resolve_wiki(raw, idx, b.known);
-            out.push_back(Link{c.path, raw, dst, dst.has_value()});
+            out.push_back(Link{c.path, raw, dst, dst.has_value(), "wikilink",
+                               dst ? "concept" : "missing"});
+        }
+    }
+    // Frontmatter edges are appended last, so body-link ordering is untouched.
+    for (const Concept& c : b.concepts) {
+        for (const auto& fp : fm_paths(c.frontmatter)) {
+            const std::string& kind = fp.first;
+            const std::string& raw = fp.second;
+            if (is_external(raw)) continue;
+            if (kind == "source" && is_scope(raw)) {
+                out.push_back(Link{c.path, raw, std::nullopt, false, kind, "scope"});
+                continue;
+            }
+            auto r = resolve_path(raw, c.path, targets);
+            if (!r) {
+                out.push_back(Link{c.path, raw, std::nullopt, false, kind, "missing"});
+                continue;
+            }
+            bool is_concept = b.known.count(r->first) > 0;
+            out.push_back(Link{c.path, raw,
+                               is_concept ? std::optional<std::string>(r->first) : std::nullopt,
+                               is_concept, kind, is_concept ? "concept" : "file"});
         }
     }
     return out;
 }
-
 }  // namespace okf

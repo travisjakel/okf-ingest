@@ -10,7 +10,7 @@ root_abs = pwd;
 cd(old);
 root_str = strrep(root_abs, '\', '/');
 
-files = walk_md(root_abs, {});
+[files, all_paths] = walk_md(root_abs, {}, {});
 rels = cell(1, numel(files));
 for i = 1:numel(files)
     rel = files{i}(numel(root_abs) + 2:end);
@@ -69,6 +69,14 @@ b.root = root_str;
 b.source_kind = source_kind;
 b.concepts = concepts;
 b.known = rels;
+% Every file in the tree, not only concepts: SPEC 6.2 path-valued fields and
+% SPEC 6.3 references/ point at non-markdown artifacts (an attester .py, a
+% computation .sql). Those are real targets, not broken links.
+b.files = cell(1, numel(all_paths));
+for i = 1:numel(all_paths)
+    rel = all_paths{i}(numel(root_abs) + 2:end);
+    b.files{i} = strrep(rel, '\', '/');
+end
 b.okf_version = '';
 for i = 1:numel(concepts)
     if strcmp(concepts(i).path, 'index.md')
@@ -81,7 +89,7 @@ for i = 1:numel(concepts)
 end
 end
 
-function files = walk_md(d, files)
+function [files, all_files] = walk_md(d, files, all_files)
 entries = dir(d);
 % deterministic order not required here (concepts re-sorted by rel path)
 for i = 1:numel(entries)
@@ -92,10 +100,13 @@ for i = 1:numel(entries)
     full = fullfile(d, name);
     if entries(i).isdir
         if name(1) ~= '.'
-            files = walk_md(full, files);
+            [files, all_files] = walk_md(full, files, all_files);
         end
-    elseif name(1) ~= '.' && numel(name) > 3 && strcmp(name(end - 2:end), '.md')
-        files{end + 1} = full; %#ok<AGROW>
+    elseif name(1) ~= '.'
+        all_files{end + 1} = full; %#ok<AGROW>
+        if numel(name) > 3 && strcmp(name(end - 2:end), '.md')
+            files{end + 1} = full; %#ok<AGROW>
+        end
     end
 end
 end

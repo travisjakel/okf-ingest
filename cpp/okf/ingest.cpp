@@ -28,12 +28,13 @@ Ingested ingest_bundle(Bundle b) {
     s.n_conformant = n_conf;
     s.conformant = err_paths.empty();
     for (const Finding& f : ing.findings) {
+        // "info" is neither: it is a note for a producer, never a defect count.
         if (f.severity == "error") ++s.errors;
-        else ++s.warnings;
+        else if (f.severity == "warn") ++s.warnings;
     }
     s.links_total = ing.links.size();
     for (const Link& l : ing.links) {
-        if (!l.resolved) ++s.links_broken;
+        if (l.target == "missing") ++s.links_broken;
     }
     ing.bundle = std::move(b);
     return ing;

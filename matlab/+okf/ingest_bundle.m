@@ -11,7 +11,8 @@ for i = 1:numel(findings)
     if strcmp(findings(i).severity, 'error')
         err_paths{end + 1} = findings(i).path; %#ok<AGROW>
         n_err = n_err + 1;
-    else
+    elseif strcmp(findings(i).severity, 'warn')
+        % 'info' is neither: a note for a producer, never a defect count.
         n_warn = n_warn + 1;
     end
 end
@@ -28,7 +29,7 @@ for i = 1:numel(b.concepts)
 end
 n_broken = 0;
 for i = 1:numel(lk)
-    if ~lk(i).resolved
+    if strcmp(lk(i).target, 'missing')
         n_broken = n_broken + 1;
     end
 end

@@ -174,10 +174,91 @@ pub fn resolve_link(raw: &str, src_rel: &str, known: &BTreeSet<String>) -> Optio
     }
 }
 
-/// All internal links of a bundle (markdown links then wikilinks, per concept
-/// in path order) with resolution status.
+/// Path-valued frontmatter fields (SPEC 6.2): `resource`, `sources[].resource`,
+/// `computation`, `executor.resource`, `attester.resource`. Fixed order, so the
+/// edge list stays deterministic.
+pub fn fm_paths(fm: &Option<serde_json::Map<String, serde_json::Value>>) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let Some(v) = fm else { return out };
+    let mut push = |kind: &str, val: Option<&serde_json::Value>| {
+        if let Some(s) = val.and_then(|x| x.as_str()) {
+            if !s.is_empty() {
+                out.push((kind.to_string(), s.to_string()));
+            }
+        }
+    };
+    push("resource", v.get("resource"));
+    push("computation", v.get("computation"));
+    push(
+        "executor",
+        v.get("executor").and_then(|e| e.get("resource")),
+    );
+    push(
+        "attester",
+        v.get("attester").and_then(|e| e.get("resource")),
+    );
+    match v.get("sources") {
+        Some(serde_json::Value::Array(a)) => {
+            for s in a {
+                push("source", s.get("resource"));
+            }
+        }
+        Some(o @ serde_json::Value::Object(_)) => push("source", o.get("resource")),
+        _ => {}
+    }
+    out
+}
+
+/// A `sources[].resource` MAY be a scope descriptor rather than a path (SPEC
+/// 5.1), e.g. "all queries in BigQuery project X". A path never contains
+/// whitespace, which is the only signal the spec gives.
+pub fn is_scope(raw: &str) -> bool {
+    raw.chars().any(char::is_whitespace)
+}
+
+/// Resolve a path-valued frontmatter field. Applies the SPEC 6.2 reading first
+/// (a leading `/` is bundle-relative, otherwise relative to the concept's own
+/// directory); if that finds nothing, falls back to the bundle root. The
+/// fallback exists because the reference bundles write root-relative paths
+/// WITHOUT the leading slash: all 12 frontmatter paths in upstream's
+/// `acme_retail` resolve that way and none resolve the spec-literal way, and a
+/// consumer is required to be permissive (SPEC 11).
+///
+/// Returns `(path, how)` where `how` is `"spec"` or `"root"`.
+pub fn resolve_path(
+    raw: &str,
+    src_rel: &str,
+    targets: &BTreeSet<String>,
+) -> Option<(String, &'static str)> {
+    let t = raw.split('#').next().unwrap_or("");
+    let spec = match t.strip_prefix('/') {
+        Some(stripped) => norm(stripped),
+        None => match src_rel.rsplit_once('/') {
+            Some((d, _)) => norm(&format!("{d}/{t}")),
+            None => norm(t),
+        },
+    };
+    if targets.contains(&spec) {
+        return Some((spec, "spec"));
+    }
+    let root = norm(t.strip_prefix('/').unwrap_or(t));
+    if targets.contains(&root) {
+        return Some((root, "root"));
+    }
+    None
+}
+
+/// The concept graph. Three edge sources, in this order: markdown links,
+/// wikilinks, and the path-valued frontmatter fields of SPEC 6.2. The last
+/// group carries the derivation and execution edges, which appear nowhere in
+/// the body.
 pub fn links(b: &Bundle) -> Vec<Link> {
     let idx = wiki_index(&b.concepts);
+    let targets = if b.files.is_empty() {
+        &b.known
+    } else {
+        &b.files
+    };
     let mut out = Vec::new();
     for c in &b.concepts {
         for raw in &c.links_raw {
@@ -185,21 +266,73 @@ pub fn links(b: &Bundle) -> Vec<Link> {
                 continue;
             }
             let dst = resolve_link(raw, &c.path, &b.known);
+            let target = if dst.is_some() {
+                "concept"
+            } else if resolve_path(raw, &c.path, targets).is_some() {
+                "file"
+            } else {
+                "missing"
+            };
             out.push(Link {
                 src_path: c.path.clone(),
                 dst_raw: raw.clone(),
                 resolved: dst.is_some(),
                 dst_path: dst,
+                kind: "body".to_string(),
+                target: target.to_string(),
             });
         }
         for raw in &c.wikilinks_raw {
             let dst = resolve_wiki(raw, &idx, &b.known);
+            let target = if dst.is_some() { "concept" } else { "missing" };
             out.push(Link {
                 src_path: c.path.clone(),
                 dst_raw: raw.clone(),
                 resolved: dst.is_some(),
                 dst_path: dst,
+                kind: "wikilink".to_string(),
+                target: target.to_string(),
             });
+        }
+    }
+    // Frontmatter edges are appended last, so body-link ordering is untouched.
+    for c in &b.concepts {
+        for (kind, raw) in fm_paths(&c.frontmatter) {
+            if is_external(&raw) {
+                continue;
+            }
+            if kind == "source" && is_scope(&raw) {
+                out.push(Link {
+                    src_path: c.path.clone(),
+                    dst_raw: raw,
+                    dst_path: None,
+                    resolved: false,
+                    kind,
+                    target: "scope".to_string(),
+                });
+                continue;
+            }
+            match resolve_path(&raw, &c.path, targets) {
+                None => out.push(Link {
+                    src_path: c.path.clone(),
+                    dst_raw: raw,
+                    dst_path: None,
+                    resolved: false,
+                    kind,
+                    target: "missing".to_string(),
+                }),
+                Some((p, _how)) => {
+                    let is_concept = b.known.contains(&p);
+                    out.push(Link {
+                        src_path: c.path.clone(),
+                        dst_raw: raw,
+                        dst_path: if is_concept { Some(p) } else { None },
+                        resolved: is_concept,
+                        kind,
+                        target: if is_concept { "concept" } else { "file" }.to_string(),
+                    });
+                }
+            }
         }
     }
     out

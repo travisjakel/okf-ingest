@@ -218,6 +218,95 @@ fn conformance() {
         );
     }
 
+    // --- v0.2 Attested Computation: SPEC 6.2 frontmatter path fields as edges ---
+    let inga = ingest(here.join("bundles/v02_attested").to_str().unwrap()).unwrap();
+    let expa = load("expected/v02_attested.json");
+    for (key, got) in [
+        ("n_files", inga.summary.n_files as u64),
+        ("n_concepts", inga.summary.n_concepts as u64),
+        ("n_conformant", inga.summary.n_conformant as u64),
+    ] {
+        c.check(
+            &format!("v02a.{key}"),
+            got,
+            expa["bundle"][key].as_u64().unwrap(),
+        );
+    }
+    c.check(
+        "v02a.conformant",
+        inga.summary.conformant,
+        expa["bundle"]["conformant"].as_bool().unwrap(),
+    );
+    for (key, got) in [
+        ("errors", inga.summary.errors as u64),
+        ("warnings", inga.summary.warnings as u64),
+    ] {
+        c.check(
+            &format!("v02a.{key}"),
+            got,
+            expa["validation"][key].as_u64().unwrap(),
+        );
+    }
+    c.check(
+        "v02a.links_total",
+        inga.summary.links_total as u64,
+        expa["links"]["total"].as_u64().unwrap(),
+    );
+    c.check(
+        "v02a.links_broken",
+        inga.summary.links_broken as u64,
+        expa["links"]["broken"].as_u64().unwrap(),
+    );
+    for fr in expa["validation"]["forbidden_rules"].as_array().unwrap() {
+        let fr = fr.as_str().unwrap();
+        let present = inga.findings.iter().any(|f| f.rule == fr);
+        c.check(&format!("v02a.no_{fr}"), present, false);
+    }
+    for (rl, want) in expa["validation"]["rule_counts"].as_object().unwrap() {
+        let got = inga.findings.iter().filter(|f| &f.rule == rl).count() as u64;
+        c.check(&format!("v02a.rule[{rl}]"), got, want.as_u64().unwrap());
+    }
+    for (kd, want) in expa["links"]["by_kind"].as_object().unwrap() {
+        let got = inga.links.iter().filter(|l| &l.kind == kd).count() as u64;
+        c.check(&format!("v02a.kind[{kd}]"), got, want.as_u64().unwrap());
+    }
+    for (tg, want) in expa["links"]["by_target"].as_object().unwrap() {
+        let got = inga.links.iter().filter(|l| &l.target == tg).count() as u64;
+        c.check(&format!("v02a.target[{tg}]"), got, want.as_u64().unwrap());
+    }
+    for (key, want) in expa["resolutions"].as_object().unwrap() {
+        if key.starts_with('_') {
+            continue;
+        }
+        let (src, raw) = key.split_once('|').unwrap();
+        let got = inga
+            .links
+            .iter()
+            .find(|l| l.src_path == src && l.dst_raw == raw)
+            .and_then(|l| l.dst_path.clone());
+        c.check(
+            &format!("v02a.{key}"),
+            got,
+            want.as_str().map(str::to_string),
+        );
+    }
+    for (pth, want) in expa["timestamps"].as_object().unwrap() {
+        if pth.starts_with('_') {
+            continue;
+        }
+        let got = inga
+            .bundle
+            .concepts
+            .iter()
+            .find(|x| &x.path == pth)
+            .and_then(|x| x.timestamp.clone());
+        c.check(
+            &format!("v02a.timestamp[{pth}]"),
+            got,
+            want.as_str().map(str::to_string),
+        );
+    }
+
     // --- rank (Personalized PageRank: exact, deterministic, parity-locked) ---
     let ingr = ingest(here.join("bundles/store").to_str().unwrap()).unwrap();
     let expr = load("expected/rank.json");

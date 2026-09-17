@@ -1,10 +1,19 @@
 function out = links(b)
-%LINKS All internal links of a bundle with resolution status.
-%   Mirrors py links(): markdown links (externals skipped) then wikilinks,
-%   per concept in path order. Rows: src_path, dst_raw, dst_path ('' if
-%   unresolved), resolved.
+%LINKS The concept graph. Three edge sources, in this order: markdown links
+%   (externals skipped), wikilinks, and the path-valued frontmatter fields of
+%   SPEC 6.2. The last group carries the derivation and execution edges, which
+%   appear nowhere in the body.
+%   Rows: src_path, dst_raw, dst_path ('' unless it resolves to a concept),
+%   resolved, kind (body|wikilink|resource|source|computation|executor|
+%   attester), target (concept|file|scope|missing).
 idx = wiki_index(b.concepts);
-out = struct('src_path', {}, 'dst_raw', {}, 'dst_path', {}, 'resolved', {});
+if isfield(b, 'files') && ~isempty(b.files)
+    targets = b.files;
+else
+    targets = b.known;
+end
+out = struct('src_path', {}, 'dst_raw', {}, 'dst_path', {}, 'resolved', {}, ...
+             'kind', {}, 'target', {});
 for i = 1:numel(b.concepts)
     c = b.concepts(i);
     for j = 1:numel(c.links_raw)
@@ -13,14 +22,65 @@ for i = 1:numel(b.concepts)
             continue;
         end
         dst = resolve_link(raw, c.path, b.known);
+        if ~isempty(dst)
+            tgt = 'concept';
+        else
+            [rp, ~] = okf.resolve_path(raw, c.path, targets);
+            if ~isempty(rp)
+                tgt = 'file';
+            else
+                tgt = 'missing';
+            end
+        end
         out(end + 1) = struct('src_path', c.path, 'dst_raw', raw, ...
-                              'dst_path', dst, 'resolved', ~isempty(dst)); %#ok<AGROW>
+                              'dst_path', dst, 'resolved', ~isempty(dst), ...
+                              'kind', 'body', 'target', tgt); %#ok<AGROW>
     end
     for j = 1:numel(c.wikilinks_raw)
         raw = c.wikilinks_raw{j};
         dst = resolve_wiki(raw, idx, b.known);
+        if ~isempty(dst)
+            tgt = 'concept';
+        else
+            tgt = 'missing';
+        end
         out(end + 1) = struct('src_path', c.path, 'dst_raw', raw, ...
-                              'dst_path', dst, 'resolved', ~isempty(dst)); %#ok<AGROW>
+                              'dst_path', dst, 'resolved', ~isempty(dst), ...
+                              'kind', 'wikilink', 'target', tgt); %#ok<AGROW>
+    end
+end
+% Frontmatter edges are appended last, so body-link ordering is untouched.
+for i = 1:numel(b.concepts)
+    c = b.concepts(i);
+    fps = okf.fm_paths(c.frontmatter);
+    for j = 1:numel(fps)
+        kind = fps{j}{1};
+        raw = fps{j}{2};
+        if is_external(raw)
+            continue;
+        end
+        if strcmp(kind, 'source') && okf.is_scope(raw)
+            out(end + 1) = struct('src_path', c.path, 'dst_raw', raw, ...
+                                  'dst_path', '', 'resolved', false, ...
+                                  'kind', kind, 'target', 'scope'); %#ok<AGROW>
+            continue;
+        end
+        [rp, ~] = okf.resolve_path(raw, c.path, targets);
+        if isempty(rp)
+            out(end + 1) = struct('src_path', c.path, 'dst_raw', raw, ...
+                                  'dst_path', '', 'resolved', false, ...
+                                  'kind', kind, 'target', 'missing'); %#ok<AGROW>
+            continue;
+        end
+        if any(strcmp(rp, b.known))
+            out(end + 1) = struct('src_path', c.path, 'dst_raw', raw, ...
+                                  'dst_path', rp, 'resolved', true, ...
+                                  'kind', kind, 'target', 'concept'); %#ok<AGROW>
+        else
+            out(end + 1) = struct('src_path', c.path, 'dst_raw', raw, ...
+                                  'dst_path', '', 'resolved', false, ...
+                                  'kind', kind, 'target', 'file'); %#ok<AGROW>
+        end
     end
 end
 end
@@ -140,7 +200,7 @@ else
         cand = [src_rel(1:slash) t];
     end
 end
-cand = norm_path(cand);
+cand = okf.internal.norm_path(cand);
 if any(strcmp(cand, known))
     dst = cand;
 else
@@ -148,24 +208,6 @@ else
 end
 end
 
-function p = norm_path(p)
-p = strrep(p, '\', '/');
-segs = strsplit(p, '/', 'CollapseDelimiters', false);
-out = {};
-for i = 1:numel(segs)
-    s = segs{i};
-    if isempty(s) || strcmp(s, '.')
-        continue;
-    elseif strcmp(s, '..')
-        if ~isempty(out)
-            out(end) = []; %#ok<AGROW>
-        end
-    else
-        out{end + 1} = s; %#ok<AGROW>
-    end
-end
-p = strjoin(out, '/');
-end
 
 function tf = is_external(raw)
 hash_i = find(raw == '#', 1);
