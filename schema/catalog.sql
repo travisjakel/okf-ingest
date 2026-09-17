@@ -33,8 +33,53 @@ CREATE TABLE IF NOT EXISTS okf_concept (
   frontmatter  TEXT,               -- full frontmatter as JSON (preserves unknown keys)
   parse_error  TEXT,               -- NULL if frontmatter parsed cleanly
   content_hash TEXT,
+  -- Derived v0.2 trust and lifecycle (SPEC 5), which SPEC 11 asks consumers to
+  -- derive "only from the fields specified here". `status` is NULL unless the
+  -- value is in the closed SPEC 5.4 vocabulary; `status_raw` keeps what was
+  -- authored, because producer extensions reuse this key.
+  status       TEXT,               -- draft | stable | deprecated
+  status_raw   TEXT,
+  stale_after  TEXT,               -- absolute instant (SPEC 5.5)
+  trust_tier   TEXT,               -- unverified | machine-confirmed | human-reviewed
+  verified_at  TEXT,               -- latest verification instant
+  verified_by  TEXT,
+  generated_by TEXT,
   PRIMARY KEY (bundle_id, path)
 );
+-- SPEC 5.1 provenance: one row per `sources[]` entry, signals as authored.
+-- The spec records objective signals and refuses to store a credibility SCORE
+-- (subjective, unportable, goes stale), so neither do we -- `cited` is the
+-- footnote-label join into `sources[].id` that the spec defines.
+CREATE TABLE IF NOT EXISTS okf_source (
+  bundle_id     TEXT,
+  path          TEXT,              -- concept carrying the entry
+  idx           INTEGER,           -- 1-based position in sources[]
+  id            TEXT,
+  resource      TEXT,
+  title         TEXT,
+  author        TEXT,              -- actor convention (SPEC 7)
+  usage_count   TEXT,              -- verbatim; a coarse liveness signal
+  last_modified TEXT,
+  is_scope      BOOLEAN,           -- a scope descriptor, not a path (SPEC 5.1)
+  cited         BOOLEAN            -- a [^id] footnote attributes a claim to it
+);
+
+-- SPEC 10 Attested Computations. Contract only: okf-ingest reads and binds,
+-- and executes nothing.
+CREATE TABLE IF NOT EXISTS okf_computation (
+  bundle_id        TEXT,
+  path             TEXT,
+  runtime          TEXT,           -- REQUIRED for the type (SPEC 10.2)
+  form             TEXT,           -- inline | file | none | both
+  computation_path TEXT,
+  computation      TEXT,           -- the text, from whichever form is present
+  n_parameters     INTEGER,
+  parameters       TEXT,           -- JSON array of {name, type, required}
+  executor         TEXT,
+  receipt          TEXT,           -- JSON array of required receipt fields
+  attester         TEXT
+);
+
 
 -- Concept graph: one row per reference. Untyped directed edges (OKF §6).
 -- Body links and [[wikilinks]] come first, then the path-valued frontmatter

@@ -54,7 +54,7 @@ if (requireNamespace("okf", quietly = TRUE)) {
   suppressPackageStartupMessages(library(okf))           # installed package
 } else if (!is.na(okf_src_dir)) {
   rdir <- file.path(okf_src_dir, "R")
-  for (f in c("okf.R", "okf_html.R", "okf_graph.R", "okf_doctor.R", "okf_diff.R", "okf_rank.R")) source(file.path(rdir, f))  # dev fallback
+  for (f in c("okf.R", "okf_trust.R", "okf_html.R", "okf_graph.R", "okf_doctor.R", "okf_diff.R", "okf_rank.R")) source(file.path(rdir, f))  # dev fallback
 } else stop("okf is not installed and the dev source could not be located")
 
 args <- commandArgs(trailingOnly = TRUE)

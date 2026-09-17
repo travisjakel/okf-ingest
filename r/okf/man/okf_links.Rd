@@ -10,9 +10,23 @@ okf_links(rd)
 \item{rd}{A bundle as returned by [okf_read()].}
 }
 \value{
-A data.frame with `src_path`, `dst_raw`, `dst_path`, `resolved`.
+A data.frame with `src_path`, `dst_raw`, `dst_path`, `resolved`,
+  `kind` (`body`/`wikilink`/`resource`/`source`/`computation`/`executor`/
+  `attester`) and `target`.
 }
 \description{
-Includes both markdown `](path)` links (resolved by path) and
-`[[wikilink]]` references (resolved by name: id / alias / title / stem).
+Three edge sources, in this order: markdown `](path)` links (resolved by
+path), `[[wikilink]]` references (resolved by name: id / alias / title /
+stem), and the path-valued frontmatter fields of SPEC 6.2 -- `resource`,
+`sources[].resource`, `computation`, `executor.resource` and
+`attester.resource`. That last group carries the derivation and execution
+edges, which appear nowhere in the body: on upstream's `acme_retail` they
+are 12 edges against 30 body edges, and without them "what depends on this
+policy" is answerable only from the directory index.
+}
+\details{
+`target` says what the reference points at: `"concept"` (a markdown concept,
+the only case that forms a graph edge), `"file"` (a real non-concept file in
+the bundle, such as an attester `.py` -- present, so not broken), `"scope"`
+(a SPEC 5.1 scope descriptor, not a path at all), or `"missing"`.
 }

@@ -30,7 +30,15 @@ CREATE TABLE IF NOT EXISTS okf_bundle (bundle_id TEXT PRIMARY KEY, root TEXT,
 CREATE TABLE IF NOT EXISTS okf_concept (bundle_id TEXT, path TEXT, reserved BOOLEAN,
   type TEXT, title TEXT, description TEXT, resource TEXT, tags TEXT, timestamp TEXT,
   body TEXT, frontmatter TEXT, parse_error TEXT, content_hash TEXT,
+  status TEXT, status_raw TEXT, stale_after TEXT, trust_tier TEXT,
+  verified_at TEXT, verified_by TEXT, generated_by TEXT,
   PRIMARY KEY (bundle_id, path));
+CREATE TABLE IF NOT EXISTS okf_source (bundle_id TEXT, path TEXT, idx INTEGER,
+  id TEXT, resource TEXT, title TEXT, author TEXT, usage_count TEXT,
+  last_modified TEXT, is_scope BOOLEAN, cited BOOLEAN);
+CREATE TABLE IF NOT EXISTS okf_computation (bundle_id TEXT, path TEXT, runtime TEXT,
+  form TEXT, computation_path TEXT, computation TEXT, n_parameters INTEGER,
+  parameters TEXT, executor TEXT, receipt TEXT, attester TEXT);
 CREATE TABLE IF NOT EXISTS okf_link (bundle_id TEXT, src_path TEXT, dst_raw TEXT,
   dst_path TEXT, resolved BOOLEAN, kind TEXT, target TEXT);
 CREATE TABLE IF NOT EXISTS okf_validation (bundle_id TEXT, path TEXT, severity TEXT,
@@ -220,13 +228,18 @@ okf_read <- function(root, bundle_id = NULL, source_kind = "dir") {
     if (is.na(v) || !nzchar(v)) return(invisible())
     out[[length(out) + 1L]] <<- list(kind = kind, raw = v)
   }
-  push("resource", fm$resource)
-  push("computation", fm$computation)
-  if (is.list(fm$executor)) push("executor", fm$executor$resource)
-  if (is.list(fm$attester)) push("attester", fm$attester$resource)
-  if (!is.null(fm$sources)) {
-    ss <- if (is.list(fm$sources) && !is.null(fm$sources$resource)) list(fm$sources) else fm$sources
-    for (s in ss) if (is.list(s)) push("source", s$resource)
+  push("resource", fm[["resource"]])
+  push("computation", fm[["computation"]])
+  # `[[` throughout, and a shape check before every index: producer extensions
+  # reuse these key names with other shapes (the R_Files wiki writes
+  # `sources: 3`), and `$` on an atomic vector is a hard error that would abort
+  # the ingest of an entire bundle over one concept.
+  if (is.list(fm$executor)) push("executor", fm$executor[["resource"]])
+  if (is.list(fm$attester)) push("attester", fm$attester[["resource"]])
+  ss <- fm[["sources"]]
+  if (is.list(ss)) {
+    if (!is.null(ss[["resource"]])) ss <- list(ss)
+    for (s in ss) if (is.list(s)) push("source", s[["resource"]])
   }
   out
 }
@@ -513,6 +526,14 @@ okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
                            params = list(bid))
   incr <- isTRUE(incremental) && nrow(prior) > 0
 
+  # SPEC 5 trust / lifecycle, derived once and carried as columns so a catalog
+  # query (and okf_doctor) can reason about it without re-parsing frontmatter.
+  tr <- okf_trust(rd, now = ingested_at)
+  trow <- function(p, col) {
+    v <- tr[[col]][tr$path == p]
+    if (!length(v)) NA else v[1]
+  }
+
   # Per-concept rows for the whole bundle.
   cdf <- do.call(rbind, lapply(rd$concepts, function(c) data.frame(
     bundle_id = bid, path = c$path, reserved = c$reserved, type = c$type,
@@ -520,7 +541,11 @@ okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
     tags = if (is.null(c$tags)) NA_character_ else as.character(jsonlite::toJSON(c$tags)),
     timestamp = c$timestamp, body = c$body,
     frontmatter = as.character(jsonlite::toJSON(c$frontmatter %||% list(), auto_unbox = TRUE, null = "null")),
-    parse_error = c$parse_error, content_hash = c$content_hash, stringsAsFactors = FALSE)))
+    parse_error = c$parse_error, content_hash = c$content_hash,
+    status = trow(c$path, "status"), status_raw = trow(c$path, "status_raw"),
+    stale_after = trow(c$path, "stale_after"), trust_tier = trow(c$path, "trust_tier"),
+    verified_at = trow(c$path, "verified_at"), verified_by = trow(c$path, "verified_by"),
+    generated_by = trow(c$path, "generated_by"), stringsAsFactors = FALSE)))
 
   inc_stats <- NULL
   if (incr) {
@@ -537,7 +562,8 @@ okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
                       removed = length(removed), cached = length(intersect(names(cur), names(old))) - length(changed))
   } else {
     # Full (re)load: idempotent replace of any prior rows for this bundle.
-    for (t in c("okf_bundle", "okf_concept", "okf_link", "okf_validation"))
+    for (t in c("okf_bundle", "okf_concept", "okf_link", "okf_validation",
+                "okf_source", "okf_computation"))
       DBI::dbExecute(con, sprintf("DELETE FROM %s WHERE bundle_id = ?", t), params = list(bid))
     DBI::dbAppendTable(con, "okf_concept", cdf)
   }
@@ -551,6 +577,17 @@ okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
     conformant = sum(val$severity == "error") == 0, stringsAsFactors = FALSE))
   DBI::dbExecute(con, "DELETE FROM okf_link WHERE bundle_id = ?", params = list(bid))
   DBI::dbExecute(con, "DELETE FROM okf_validation WHERE bundle_id = ?", params = list(bid))
+  DBI::dbExecute(con, "DELETE FROM okf_source WHERE bundle_id = ?", params = list(bid))
+  DBI::dbExecute(con, "DELETE FROM okf_computation WHERE bundle_id = ?", params = list(bid))
+  sdf <- okf_sources(rd)
+  if (nrow(sdf)) DBI::dbAppendTable(con, "okf_source", cbind(bundle_id = bid, sdf))
+  kdf <- okf_computations(rd, now = ingested_at)
+  if (nrow(kdf)) DBI::dbAppendTable(con, "okf_computation", data.frame(
+    bundle_id = bid, path = kdf$path, runtime = kdf$runtime, form = kdf$form,
+    computation_path = kdf$computation_path, computation = kdf$computation,
+    n_parameters = kdf$n_parameters, parameters = kdf$parameters,
+    executor = kdf$executor, receipt = kdf$receipt, attester = kdf$attester,
+    stringsAsFactors = FALSE))
   if (nrow(lk)) DBI::dbAppendTable(con, "okf_link", data.frame(
     bundle_id = bid, src_path = lk$src_path, dst_raw = lk$dst_raw,
     dst_path = lk$dst_path, resolved = lk$resolved, kind = lk$kind,

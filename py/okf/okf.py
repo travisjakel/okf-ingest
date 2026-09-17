@@ -51,7 +51,15 @@ CREATE TABLE IF NOT EXISTS okf_bundle (bundle_id TEXT PRIMARY KEY, root TEXT,
 CREATE TABLE IF NOT EXISTS okf_concept (bundle_id TEXT, path TEXT, reserved BOOLEAN,
   type TEXT, title TEXT, description TEXT, resource TEXT, tags TEXT, timestamp TEXT,
   body TEXT, frontmatter TEXT, parse_error TEXT, content_hash TEXT,
+  status TEXT, status_raw TEXT, stale_after TEXT, trust_tier TEXT,
+  verified_at TEXT, verified_by TEXT, generated_by TEXT,
   PRIMARY KEY (bundle_id, path));
+CREATE TABLE IF NOT EXISTS okf_source (bundle_id TEXT, path TEXT, idx INTEGER,
+  id TEXT, resource TEXT, title TEXT, author TEXT, usage_count TEXT,
+  last_modified TEXT, is_scope BOOLEAN, cited BOOLEAN);
+CREATE TABLE IF NOT EXISTS okf_computation (bundle_id TEXT, path TEXT, runtime TEXT,
+  form TEXT, computation_path TEXT, computation TEXT, n_parameters INTEGER,
+  parameters TEXT, executor TEXT, receipt TEXT, attester TEXT);
 CREATE TABLE IF NOT EXISTS okf_link (bundle_id TEXT, src_path TEXT, dst_raw TEXT,
   dst_path TEXT, resolved BOOLEAN, kind TEXT, target TEXT);
 CREATE TABLE IF NOT EXISTS okf_validation (bundle_id TEXT, path TEXT, severity TEXT,
@@ -542,11 +550,15 @@ def ingest(root, db_path: str = ":memory:", ingested_at: Optional[str] = None,
             cleanup()
 
 
-def _concept_row(b, c):
+def _concept_row(b, c, tr=None):
+    t = (tr or {}).get(c.path, {})
     return [b.bundle_id, c.path, c.reserved, c.type, c.title, c.description,
             c.resource, None if c.tags is None else json.dumps(c.tags),
             c.timestamp, c.body, json.dumps(c.frontmatter or {}),
-            c.parse_error, c.content_hash]
+            c.parse_error, c.content_hash,
+            t.get("status"), t.get("status_raw"), t.get("stale_after"),
+            t.get("trust_tier"), t.get("verified_at"), t.get("verified_by"),
+            t.get("generated_by")]
 
 
 def _ingest_bundle(b, db_path, ingested_at, incremental=False):
@@ -564,6 +576,11 @@ def _ingest_bundle(b, db_path, ingested_at, incremental=False):
     for stmt in (s.strip() for s in SCHEMA.split(";") if s.strip()):
         con.execute(stmt)
 
+    # SPEC 5 trust / lifecycle, derived once and carried as columns so a catalog
+    # query (and doctor) can reason about it without re-parsing frontmatter.
+    from .trust import trust as _trust, sources as _sources, computations as _computations
+    tr = {t["path"]: t for t in _trust(b, now=ingested_at)}
+
     prior = dict(con.execute(
         "SELECT path, content_hash FROM okf_concept WHERE bundle_id = ?", [bid]).fetchall())
     incr = bool(incremental) and len(prior) > 0
@@ -580,15 +597,16 @@ def _ingest_bundle(b, db_path, ingested_at, incremental=False):
                 ",".join("?" * len(drop))), [bid] + drop)
         for c in b.concepts:
             if c.path in changed or c.path in added:
-                con.execute("INSERT INTO okf_concept VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", _concept_row(b, c))
+                con.execute("INSERT INTO okf_concept VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", _concept_row(b, c, tr))
         kept = len(set(cur) & set(prior))
         inc_stats = {"changed": len(changed), "added": len(added),
                      "removed": len(removed), "cached": kept - len(changed)}
     else:
-        for t in ("okf_bundle", "okf_concept", "okf_link", "okf_validation"):
+        for t in ("okf_bundle", "okf_concept", "okf_link", "okf_validation",
+                  "okf_source", "okf_computation"):
             con.execute(f"DELETE FROM {t} WHERE bundle_id = ?", [bid])
         for c in b.concepts:
-            con.execute("INSERT INTO okf_concept VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", _concept_row(b, c))
+            con.execute("INSERT INTO okf_concept VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", _concept_row(b, c, tr))
 
     # Bundle row + graph-global tables: always rewritten to current state.
     con.execute("DELETE FROM okf_bundle WHERE bundle_id = ?", [bid])
@@ -604,6 +622,18 @@ def _ingest_bundle(b, db_path, ingested_at, incremental=False):
     for f in val:
         con.execute("INSERT INTO okf_validation VALUES (?,?,?,?,?)",
                     [bid, f["path"], f["severity"], f["rule"], f["message"]])
+    con.execute("DELETE FROM okf_source WHERE bundle_id = ?", [bid])
+    con.execute("DELETE FROM okf_computation WHERE bundle_id = ?", [bid])
+    for sr in _sources(b):
+        con.execute("INSERT INTO okf_source VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    [bid, sr["path"], sr["idx"], sr["id"], sr["resource"], sr["title"],
+                     sr["author"], sr["usage_count"], sr["last_modified"],
+                     sr["is_scope"], sr["cited"]])
+    for cm in _computations(b, now=ingested_at):
+        con.execute("INSERT INTO okf_computation VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    [bid, cm["path"], cm["runtime"], cm["form"], cm["computation_path"],
+                     cm["computation"], cm["n_parameters"], cm["parameters"],
+                     cm["executor"], cm["receipt"], cm["attester"]])
 
     summary = {
         "n_files": len(b.concepts), "n_concepts": len(non_reserved), "n_conformant": n_conf,

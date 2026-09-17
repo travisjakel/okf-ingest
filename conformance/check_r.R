@@ -6,6 +6,7 @@ here <- tryCatch(dirname(sub("^--file=", "",
   grep("^--file=", commandArgs(FALSE), value = TRUE))), error = function(e) ".")
 if (!length(here) || !nzchar(here)) here <- "conformance"
 source(file.path(here, "..", "r", "okf", "R", "okf.R"))
+source(file.path(here, "..", "r", "okf", "R", "okf_trust.R"))
 source(file.path(here, "..", "r", "okf", "R", "okf_diff.R"))
 
 fails <- character(0)

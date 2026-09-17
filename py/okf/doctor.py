@@ -8,6 +8,7 @@ when exactly one basename matches) and reports every change. No LLM, no guessing
 """
 from __future__ import annotations
 import datetime, os, re
+import json
 from typing import Optional
 
 from . import okf as _okf
@@ -25,7 +26,8 @@ def doctor(con, now: Optional[str] = None, stale_days: Optional[int] = None) -> 
     it). Returns: score, n_concepts, n_healthy, n_error, n_warn, n_info,
     by_rule, issues."""
     cps = con.execute(
-        "SELECT path, reserved, title, timestamp FROM okf_concept ORDER BY path").fetchall()
+        "SELECT path, reserved, title, timestamp, status, status_raw, stale_after, "
+        "trust_tier FROM okf_concept ORDER BY path").fetchall()
     nonres = [r for r in cps if not r[1]]
     issues = [{"path": p, "severity": s, "rule": ru, "message": m}
               for p, s, ru, m in con.execute(
@@ -33,7 +35,7 @@ def doctor(con, now: Optional[str] = None, stale_days: Optional[int] = None) -> 
 
     # duplicate titles among non-reserved concepts
     titles = {}
-    for path, _, title, _ in nonres:
+    for path, _, title, *_rest in nonres:
         if title:
             titles.setdefault(title, []).append(path)
     for title, paths in titles.items():
@@ -97,7 +99,7 @@ def doctor(con, now: Optional[str] = None, stale_days: Optional[int] = None) -> 
         except ValueError:
             now_t = None
         if now_t:
-            for path, _, _, ts in nonres:
+            for path, _, _, ts, *_rest in nonres:
                 if not ts or not _ISO.match(ts):
                     continue
                 tv = datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
@@ -107,6 +109,97 @@ def doctor(con, now: Optional[str] = None, stale_days: Optional[int] = None) -> 
                 elif stale_days is not None and (now_t - tv).days > stale_days:
                     issues.append({"path": path, "severity": "warn", "rule": "stale_timestamp",
                                    "message": f"timestamp older than {int(stale_days)} days: {ts}"})
+
+    # ---- OKF v0.2 lifecycle, trust and attestation (SPEC 5, SPEC 10) --------
+    # SPEC 11: consumers SHOULD derive trust tiers and staleness only from the
+    # fields specified there. These rules are that derivation, and nothing here
+    # guesses at a value the spec does not define.
+    from .trust import instant as _instant, family_misshaped as _misshaped
+
+    def _add(path, sev, rule, msg):
+        issues.append({"path": path, "severity": sev, "rule": rule, "message": msg})
+
+    # `status` outside the closed SPEC 5.4 vocabulary. Not a defect in the
+    # bundle -- producer extensions legitimately reuse the key, and the R_Files
+    # wiki does on 218 concepts -- but the consumer must say it is ignoring the
+    # value rather than mapping it onto a lifecycle it does not mean.
+    for r in nonres:
+        if r[5] and not r[4]:
+            _add(r[0], "info", "status_not_spec_vocabulary",
+                 f"status {r[5]} is not draft/stable/deprecated (SPEC 5.4); treated as absent")
+
+    # The same collision, generalised: a v0.2 family key carrying something
+    # other than the v0.2 shape. The R_Files wiki writes `sources: 3` (a count).
+    # Ignoring it is the spec-correct permissive behaviour, but silence is how a
+    # consumer ends up looking like it read provenance it never saw.
+    for path, fmj in con.execute(
+            "SELECT path, frontmatter FROM okf_concept WHERE reserved = FALSE").fetchall():
+        try:
+            fm = json.loads(fmj or "{}")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(fm, dict):
+            continue
+        for key in ("sources", "verified", "generated", "executor", "attester", "parameters"):
+            if _misshaped(fm.get(key)):
+                _add(path, "info", "family_not_spec_shape",
+                     f"{key} is present but not in the SPEC 5/10 shape; treated as absent")
+
+    # SPEC 5.5 staleness: an absolute instant, so this is a plain comparison.
+    # It supersedes the age-heuristic `stale_timestamp` above, which guesses.
+    if now:
+        now_i = _instant(now)
+        if now_i:
+            for r in nonres:
+                sa_i = _instant(r[6])
+                if sa_i and now_i >= sa_i:
+                    _add(r[0], "warn", "stale_after_passed",
+                         f"stale_after {r[6]} has passed; re-verify before serving (SPEC 10.5)")
+
+    # A live concept depending on a deprecated one. The dependency is real and
+    # the target says not to use it, which is a fact only the graph can see.
+    st = {r[0]: r[4] for r in nonres}
+    dep = {p for p, v in st.items() if v == "deprecated"}
+    if dep:
+        for src, dst, kind in con.execute(
+                "SELECT src_path, dst_path, kind FROM okf_link WHERE resolved").fetchall():
+            if dst in dep and st.get(src) != "deprecated":
+                _add(src, "warn", "deprecated_inbound",
+                     f"{kind} reference to a deprecated concept: {dst}")
+
+    # SPEC 5.1 per-claim attribution: the footnote label is the join key into
+    # sources[].id. Both halves of a broken join are worth saying out loud.
+    for path, sid, cited in con.execute(
+            "SELECT path, id, cited FROM okf_source").fetchall():
+        if sid and not cited:
+            _add(path, "info", "source_id_uncited",
+                 f"sources[].id {sid} is never cited by a [^{sid}] footnote")
+
+    # SPEC 10.2/10.3 contract defects on an Attested Computation.
+    for path, runtime, form, params, executor, attester in con.execute(
+            "SELECT path, runtime, form, parameters, executor, attester "
+            "FROM okf_computation").fetchall():
+        if not runtime:
+            _add(path, "warn", "computation_no_runtime",
+                 "runtime is REQUIRED on an Attested Computation (SPEC 10.2)")
+        if form == "none":
+            _add(path, "warn", "computation_absent",
+                 "neither a # Computation fence nor a computation: path (SPEC 10.3)")
+        if form == "both":
+            _add(path, "warn", "computation_ambiguous",
+                 "both a # Computation fence and a computation: path; SPEC 10.3 allows one")
+        if not attester:
+            _add(path, "info", "computation_no_attester",
+                 "no attester: a run of this computation cannot be checked (SPEC 10.5)")
+        try:
+            decl = json.loads(params or "[]")
+        except (TypeError, ValueError):
+            decl = []
+        for prm in decl:
+            if not prm.get("type"):
+                _add(path, "warn", "parameter_untyped",
+                     f"parameter {prm.get('name')} has no type; the typed surface is what "
+                     "makes attestation mechanical (SPEC 10.3)")
 
     flagged = {i["path"] for i in issues if i["severity"] != "info"}  # info never hurts score
     n = len(nonres)

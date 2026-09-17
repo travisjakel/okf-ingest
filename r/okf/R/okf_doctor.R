@@ -34,7 +34,8 @@
 #'   path/severity/rule/message; severity is `error`, `warn`, or `info`).
 #' @export
 okf_doctor <- function(con, now = NULL, stale_days = NULL) {
-  cps <- DBI::dbGetQuery(con, "SELECT path, reserved, title, timestamp FROM okf_concept ORDER BY path")
+  cps <- DBI::dbGetQuery(con, paste("SELECT path, reserved, title, timestamp,",
+    "status, status_raw, stale_after, trust_tier FROM okf_concept ORDER BY path"))
   nonres <- cps[!as.logical(cps$reserved), , drop = FALSE]
   val <- DBI::dbGetQuery(con, "SELECT path, severity, rule, message FROM okf_validation")
   if (!nrow(val)) val <- data.frame(path = character(), severity = character(),
@@ -98,6 +99,110 @@ okf_doctor <- function(con, now = NULL, stale_days = NULL) {
       else if (!is.null(stale_days) && as.numeric(now_t - tv, units = "days") > stale_days)
         val <- add(val, nonres$path[i], "warn", "stale_timestamp",
                    sprintf("timestamp older than %d days: %s", as.integer(stale_days), ts))
+    }
+  }
+
+  # ---- OKF v0.2 lifecycle, trust and attestation (SPEC 5, SPEC 10) ----------
+  # SPEC 11: consumers SHOULD derive trust tiers and staleness only from the
+  # fields specified there. These rules are that derivation, and nothing here
+  # guesses at a value the spec does not define.
+
+  # `status` outside the closed SPEC 5.4 vocabulary. Not a defect in the bundle
+  # -- producer extensions legitimately reuse the key, and the R_Files wiki does
+  # on 218 concepts -- but the consumer must say it is ignoring the value rather
+  # than mapping it onto a lifecycle it does not mean.
+  for (i in seq_len(nrow(nonres))) {
+    raw <- nonres$status_raw[i]
+    if (is.na(raw) || !nzchar(raw)) next
+    if (!is.na(nonres$status[i])) next
+    val <- add(val, nonres$path[i], "info", "status_not_spec_vocabulary",
+               sprintf("status %s is not draft/stable/deprecated (SPEC 5.4); treated as absent", raw))
+  }
+
+  # The same collision, generalised: a v0.2 family key carrying something other
+  # than the v0.2 shape. The R_Files wiki writes `sources: 3` (a count) as a
+  # producer extension. Ignoring it is the spec-correct permissive behaviour,
+  # but silence is how a consumer ends up looking like it read provenance it
+  # never saw -- so say which key was skipped and why.
+  fmj <- tryCatch(DBI::dbGetQuery(con,
+    "SELECT path, frontmatter FROM okf_concept WHERE reserved = FALSE"),
+    error = function(e) NULL)
+  if (!is.null(fmj) && nrow(fmj)) for (i in seq_len(nrow(fmj))) {
+    fm <- tryCatch(jsonlite::fromJSON(fmj$frontmatter[i], simplifyVector = FALSE),
+                   error = function(e) NULL)
+    if (!is.list(fm)) next
+    for (key in c("sources", "verified", "generated", "executor", "attester", "parameters")) {
+      if (!.okf_family_misshaped(fm[[key]])) next
+      val <- add(val, fmj$path[i], "info", "family_not_spec_shape",
+                 sprintf("%s is present but not in the SPEC 5/10 shape; treated as absent", key))
+    }
+  }
+
+  # SPEC 5.5 staleness: an absolute instant, so this is a plain comparison.
+  # It supersedes the age-heuristic `stale_timestamp` above, which guesses.
+  if (!is.null(now)) {
+    now_i <- .okf_instant(now)
+    if (!is.na(now_i)) for (i in seq_len(nrow(nonres))) {
+      sa <- nonres$stale_after[i]
+      sa_i <- .okf_instant(sa)
+      if (is.na(sa_i)) next
+      if (now_i >= sa_i)
+        val <- add(val, nonres$path[i], "warn", "stale_after_passed",
+                   sprintf("stale_after %s has passed; re-verify before serving (SPEC 10.5)", sa))
+    }
+  }
+
+  # A live concept depending on a deprecated one. The dependency is real and
+  # the target says not to use it, which is a fact only the graph can see.
+  dep <- nonres$path[!is.na(nonres$status) & nonres$status == "deprecated"]
+  if (length(dep)) {
+    lk <- DBI::dbGetQuery(con, "SELECT src_path, dst_path, kind FROM okf_link WHERE resolved")
+    st <- setNames(nonres$status, nonres$path)
+    for (i in seq_len(nrow(lk))) {
+      if (!(lk$dst_path[i] %in% dep)) next
+      s_st <- st[lk$src_path[i]]
+      if (!is.na(s_st) && s_st == "deprecated") next   # deprecated -> deprecated is fine
+      val <- add(val, lk$src_path[i], "warn", "deprecated_inbound",
+                 sprintf("%s reference to a deprecated concept: %s", lk$kind[i], lk$dst_path[i]))
+    }
+  }
+
+  # SPEC 5.1 per-claim attribution: the footnote label is the join key into
+  # sources[].id. Both halves of a broken join are worth saying out loud.
+  src <- tryCatch(DBI::dbGetQuery(con, "SELECT path, id, cited FROM okf_source"),
+                  error = function(e) NULL)
+  if (!is.null(src) && nrow(src)) for (i in seq_len(nrow(src))) {
+    if (is.na(src$id[i]) || !nzchar(src$id[i])) next
+    if (!as.logical(src$cited[i]))
+      val <- add(val, src$path[i], "info", "source_id_uncited",
+                 sprintf("sources[].id %s is never cited by a [^%s] footnote", src$id[i], src$id[i]))
+  }
+
+  # SPEC 10.2/10.3 contract defects on an Attested Computation.
+  cmp <- tryCatch(DBI::dbGetQuery(con, paste("SELECT path, runtime, form, n_parameters,",
+                    "parameters, executor, attester FROM okf_computation")),
+                  error = function(e) NULL)
+  if (!is.null(cmp) && nrow(cmp)) for (i in seq_len(nrow(cmp))) {
+    pth <- cmp$path[i]
+    if (is.na(cmp$runtime[i]) || !nzchar(cmp$runtime[i]))
+      val <- add(val, pth, "warn", "computation_no_runtime",
+                 "runtime is REQUIRED on an Attested Computation (SPEC 10.2)")
+    if (identical(cmp$form[i], "none"))
+      val <- add(val, pth, "warn", "computation_absent",
+                 "neither a # Computation fence nor a computation: path (SPEC 10.3)")
+    if (identical(cmp$form[i], "both"))
+      val <- add(val, pth, "warn", "computation_ambiguous",
+                 "both a # Computation fence and a computation: path; SPEC 10.3 allows one")
+    if (is.na(cmp$attester[i]) || !nzchar(cmp$attester[i]))
+      val <- add(val, pth, "info", "computation_no_attester",
+                 "no attester: a run of this computation cannot be checked (SPEC 10.5)")
+    ps <- tryCatch(jsonlite::fromJSON(cmp$parameters[i], simplifyDataFrame = FALSE),
+                   error = function(e) NULL)
+    for (prm in (ps %||% list())) {
+      if (is.null(prm$type) || !nzchar(as.character(prm$type)[1]))
+        val <- add(val, pth, "warn", "parameter_untyped",
+                   sprintf("parameter %s has no type; the typed surface is what makes attestation mechanical (SPEC 10.3)",
+                           as.character(prm$name)[1]))
     }
   }
 
