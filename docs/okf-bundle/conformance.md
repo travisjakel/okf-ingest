@@ -11,7 +11,7 @@ tags: [conformance, parity, testing]
 A bundle is **conformant** iff every non-reserved `.md` has parseable YAML
 frontmatter with a non-empty `type`. Everything else (missing recommended
 fields, broken links, orphans, missing `index.md`) is a *finding*, never a
-rejection — permissive per OKF v0.1.
+rejection — permissive per OKF v0.2.
 
 The R and Python bindings are held to byte-identical [catalogs](catalog.md) by a
 language-agnostic conformance suite (golden bundles + expected JSON), including a

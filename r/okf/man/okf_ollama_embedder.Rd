@@ -6,13 +6,18 @@
 \usage{
 okf_ollama_embedder(
   model = "nomic-embed-text",
-  url = Sys.getenv("OLLAMA_URL", "http://localhost:11434")
+  url = NULL,
+  embed_texts = getOption("okf.embed_texts")
 )
 }
 \arguments{
-\item{model}{Ollama embedding model name.}
+\item{model}{Embedding model name.}
 
-\item{url}{Ollama base URL (defaults to the `OLLAMA_URL` env var or localhost).}
+\item{url}{Optional base URL of an Ollama host. An explicit value still means
+"that Ollama box"; leave it `NULL` to resolve from the environment.}
+
+\item{embed_texts}{Optional `(texts, model, url) -> matrix` backend. Defaults
+to `getOption("okf.embed_texts")`, and to the built-in client when unset.}
 }
 \value{
 A function `texts -> list(numeric)`. Requires the httr2 package.
@@ -21,4 +26,16 @@ A function `texts -> list(numeric)`. Requires the httr2 package.
 An embedder is a function of `texts` returning a list of numeric vectors.
 Swap in any such function (e.g. an OpenAI client) for [okf_embed()] /
 [okf_rag()].
+}
+\details{
+The endpoint is resolved, never hard-coded: llama-server / llama-swap speak
+the OpenAI `/v1/embeddings` shape and do NOT serve Ollama's
+`/api/embeddings`. Resolution order is `url`, then `LLM_EMBED_URL`, then
+`LLM_LOCAL_BACKEND=llamaswap` (via `LLAMASWAP_URL`), then `OLLAMA_URL`. The
+request/response shape follows from the resolved path, so a host that names
+`OLLAMA_URL` keeps working untouched. Mirrors `okf.rag._embed_endpoint`.
+
+A host project may instead supply its own backend with `embed_texts`: a
+function `(texts, model, url) -> matrix` with one row per text, settable once
+per session via `options(okf.embed_texts = <fn>)`.
 }

@@ -1,7 +1,7 @@
 # okf (Python binding)
 
 Python binding of **okf-ingest** — a unified ingestion tool for
-[Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog)
+[Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 (OKF) bundles. Validate a bundle, load it into a portable DuckDB catalog, and
 semantically search it.
 

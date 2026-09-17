@@ -8,7 +8,8 @@ Description: Read, validate, and load Open Knowledge Format (OKF) bundles (a
     catalog, build the concept graph, render to HTML, and optionally embed
     concept bodies for semantic search. Deterministic and agent-free: the same
     bundle always yields the same catalog, graph, and render, with no LLM calls
-    in the core. Conformant and permissive per the OKF v0.1 specification.
+    in the core. Conformant and permissive per the OKF v0.2 specification
+    (v0.1 bundles are fully supported).
 License: Apache License (>= 2)
 Encoding: UTF-8
 Depends:

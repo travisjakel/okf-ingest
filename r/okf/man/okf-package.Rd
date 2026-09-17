@@ -8,7 +8,7 @@
 \description{
 Read, validate, and load Open Knowledge Format (OKF) bundles into a portable
 DuckDB catalog, build the concept graph, and optionally embed concept bodies
-for semantic search. Conformant and permissive per the OKF v0.1
+for semantic search. Conformant and permissive per the OKF v0.2
 specification.
 }
 \author{

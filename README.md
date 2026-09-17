@@ -7,7 +7,7 @@
 [![maintenance](https://img.shields.io/badge/status-stable%20%C2%B7%20lightly%20maintained-green)](#status)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-A unified, open-source **ingestion tool for [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) bundles** — read any OKF bundle, validate its conformance (permissively, per the spec), build the concept graph, and load it into a portable, queryable **DuckDB catalog**. One catalog format, two idiomatic bindings: **R** and **Python**.
+A unified, open-source **ingestion tool for [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format) (OKF) bundles** — read any OKF bundle, validate its conformance (permissively, per the spec), build the concept graph, and load it into a portable, queryable **DuckDB catalog**. One catalog format, two idiomatic bindings: **R** and **Python**.
 
 > **Point it at your `[[wikilink]]` vault.** As of 0.6, okf-ingest resolves both
 > markdown `](path)` links *and* `[[wikilink]]` references (Obsidian / Logseq /
@@ -570,13 +570,16 @@ to reproduce the conformance corpus.
 
 ## Related tools
 
-The OKF tooling ecosystem appeared within weeks of the v0.1 spec. okf-ingest is
+The OKF tooling ecosystem appeared within weeks of the v0.1 spec and the
+authoring / validate / visualize niche is now well served. okf-ingest is
 deliberately positioned where the others aren't — a queryable catalog + RAG, in
-R and Python:
+R and Python, plus the v0.2 trust, lifecycle and attestation semantics that
+consumers are asked to derive (SPEC §11) but generally don't:
 
 | Tool | Lang | Validate | Parse/graph | `[[wikilinks]]` | Queryable store | Embeddings / RAG |
 |------|------|:--:|:--:|:--:|:--:|:--:|
-| `GoogleCloudPlatform/knowledge-catalog` | Py/TS | — | producer + HTML viz | — | — | — |
+| `GoogleCloudPlatform/open-knowledge-format` | Python | — | reference agent + HTML viz | — | — | — |
+| `serradura/okf` | Ruby | ✓ | ✓ + TUI, graph server, MCP | — | — | — |
 | `W4G1/okf` | Rust | ✓ | ✓ | — | — | — |
 | `sniperunder123/okf-knowledge` | Python (Claude Code skill) | ✓ | ✓ + **authoring & graph viz** | — | — | — |
 | WitsCode / okf.site | Node/web | ✓ | partial | — | — | — |

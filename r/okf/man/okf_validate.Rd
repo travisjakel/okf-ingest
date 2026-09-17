@@ -2,7 +2,7 @@
 % Please edit documentation in R/okf.R
 \name{okf_validate}
 \alias{okf_validate}
-\title{Validate a bundle against the OKF v0.1 conformance rules (permissively).}
+\title{Validate a bundle against the OKF v0.2 conformance rules (permissively).}
 \usage{
 okf_validate(rd)
 }

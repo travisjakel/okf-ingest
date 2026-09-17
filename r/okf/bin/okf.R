@@ -23,10 +23,37 @@
 suppressPackageStartupMessages({ library(jsonlite) })
 
 self <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
+okf_src_dir <- if (length(self) && nzchar(self))
+  normalizePath(file.path(dirname(self), ".."), mustWork = FALSE) else NA_character_
+
+# Version guard: this script lives INSIDE the package source tree, so an installed
+# `okf` of a different version means the CLI would silently run code that is not
+# the code sitting next to it. Refuse rather than prefer one arbitrarily; set
+# OKF_ALLOW_VERSION_MISMATCH=1 to override.
+.okf_src_version <- function(dir) {
+  if (is.na(dir)) return(NA_character_)
+  d <- file.path(dir, "DESCRIPTION")
+  if (!file.exists(d)) return(NA_character_)
+  v <- read.dcf(d, fields = "Version")[1, 1]
+  if (is.na(v)) NA_character_ else as.character(v)
+}
+
 if (requireNamespace("okf", quietly = TRUE)) {
+  inst <- as.character(utils::packageVersion("okf"))
+  src  <- .okf_src_version(okf_src_dir)
+  if (!is.na(src) && src != inst && !nzchar(Sys.getenv("OKF_ALLOW_VERSION_MISMATCH")))
+    stop(sprintf(paste0(
+      "okf version mismatch: installed package is %s but the source tree next to this
+",
+      "  script is %s (%s).
+",
+      "  Reinstall with:  R CMD INSTALL %s
+",
+      "  Or set OKF_ALLOW_VERSION_MISMATCH=1 to run the installed package anyway."),
+      inst, src, okf_src_dir, shQuote(okf_src_dir)), call. = FALSE)
   suppressPackageStartupMessages(library(okf))           # installed package
-} else if (length(self) && nzchar(self)) {
-  rdir <- file.path(normalizePath(file.path(dirname(self), ".."), mustWork = FALSE), "R")
+} else if (!is.na(okf_src_dir)) {
+  rdir <- file.path(okf_src_dir, "R")
   for (f in c("okf.R", "okf_html.R", "okf_graph.R", "okf_doctor.R", "okf_diff.R", "okf_rank.R")) source(file.path(rdir, f))  # dev fallback
 } else stop("okf is not installed and the dev source could not be located")
 

@@ -2,7 +2,7 @@
 
 Mirrors the R reference binding (r/okf/R/okf.R) and writes a byte-compatible
 DuckDB catalog against the same schema (schema/catalog.sql), so a bundle
-ingested by either language yields the same catalog. Implements OKF v0.1
+ingested by either language yields the same catalog. Implements OKF v0.2
 permissive consumption: never rejects a bundle for recommended-field issues.
 
 Public API:

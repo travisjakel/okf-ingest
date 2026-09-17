@@ -1,7 +1,8 @@
 # OKF conformance — what okf-ingest enforces
 
 Grounded in the OKF specification, v0.2
-([GoogleCloudPlatform/knowledge-catalog `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md));
+([GoogleCloudPlatform/open-knowledge-format `SPEC.md`](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md);
+the former copy under `knowledge-catalog/okf/` was retired 2026-08-21 and is no longer maintained);
 v0.1 bundles remain fully supported (v0.2 §13 keeps them consumable).
 This tool is a **consumer** and follows the spec's permissive-consumption rule:
 it never *rejects* a bundle for recommended-field issues — it records findings

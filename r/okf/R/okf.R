@@ -1,7 +1,7 @@
 # ============================================================================
 # okf -- Open Knowledge Format ingestion (R reference binding)
 #
-# Reads an OKF v0.1 bundle (a directory of markdown files with YAML
+# Reads an OKF v0.2 bundle (a directory of markdown files with YAML
 # frontmatter), validates conformance permissively, builds the concept graph,
 # and loads everything into a portable DuckDB catalog (schema/catalog.sql).
 #
@@ -222,7 +222,7 @@ okf_links <- function(rd) {
   do.call(rbind, rows)
 }
 
-#' Validate a bundle against the OKF v0.1 conformance rules (permissively).
+#' Validate a bundle against the OKF v0.2 conformance rules (permissively).
 #'
 #' Hard rules (severity `error`): parseable frontmatter, non-empty `type`. Soft
 #' findings (severity `warn`): missing recommended fields, non-ISO timestamps,
@@ -492,31 +492,67 @@ okf_chunk_body <- function(body, target_chars = 600L) {
 #' Swap in any such function (e.g. an OpenAI client) for [okf_embed()] /
 #' [okf_rag()].
 #'
-#' @param model Ollama embedding model name.
-#' @param url Ollama base URL (defaults to the `OLLAMA_URL` env var or
-#'   localhost). An explicit value here still means "that Ollama box"; the
-#'   default instead defers to the shared `lib/embed_local.R` resolver, which
-#'   picks llama-swap's OpenAI shape when `LLM_LOCAL_BACKEND` says so.
+#' The endpoint is resolved, never hard-coded: llama-server / llama-swap speak
+#' the OpenAI `/v1/embeddings` shape and do NOT serve Ollama's
+#' `/api/embeddings`. Resolution order is `url`, then `LLM_EMBED_URL`, then
+#' `LLM_LOCAL_BACKEND=llamaswap` (via `LLAMASWAP_URL`), then `OLLAMA_URL`. The
+#' request/response shape follows from the resolved path, so a host that names
+#' `OLLAMA_URL` keeps working untouched. Mirrors `okf.rag._embed_endpoint`.
+#'
+#' A host project may instead supply its own backend with `embed_texts`: a
+#' function `(texts, model, url) -> matrix` with one row per text, settable once
+#' per session via `options(okf.embed_texts = <fn>)`.
+#'
+#' @param model Embedding model name.
+#' @param url Optional base URL of an Ollama host. An explicit value still means
+#'   "that Ollama box"; leave it `NULL` to resolve from the environment.
+#' @param embed_texts Optional `(texts, model, url) -> matrix` backend. Defaults
+#'   to `getOption("okf.embed_texts")`, and to the built-in client when unset.
 #' @return A function `texts -> list(numeric)`. Requires the httr2 package.
 #' @export
-okf_ollama_embedder <- function(model = "nomic-embed-text",
-                                url = Sys.getenv("OLLAMA_URL", "http://localhost:11434")) {
+okf_ollama_embedder <- function(model = "nomic-embed-text", url = NULL,
+                                embed_texts = getOption("okf.embed_texts")) {
   if (!requireNamespace("httr2", quietly = TRUE)) stop("okf_ollama_embedder needs the httr2 package")
-  if (!exists("embed_texts", mode = "function"))
-    source("~/R_Files/lib/embed_local.R")
-  function(texts) {
-    m <- embed_texts(texts, model = model, url = .okf_embed_url(url))
-    lapply(seq_len(nrow(m)), function(i) as.numeric(m[i, ]))
+  ep <- .okf_embed_endpoint(url)
+  if (!is.null(embed_texts)) {
+    if (!is.function(embed_texts)) stop("embed_texts must be a function (texts, model, url) -> matrix")
+    return(function(texts) {
+      m <- embed_texts(texts, model = model, url = ep$url)
+      lapply(seq_len(nrow(m)), function(i) as.numeric(m[i, ]))
+    })
   }
+  function(texts) lapply(texts, function(t) {
+    body <- if (ep$shape == "ollama_single") list(model = model, prompt = t)
+            else list(model = model, input = list(t))
+    j <- httr2::resp_body_json(
+      httr2::req_perform(httr2::req_timeout(
+        httr2::req_body_json(httr2::request(ep$url), body), 120)))
+    as.numeric(unlist(switch(ep$shape,
+      ollama_single = j$embedding,
+      openai        = j$data[[1]]$embedding,
+      j$embeddings[[1]])))
+  })
 }
 
-# An explicit url= still means "that Ollama box", exactly as before. Only the
-# default defers to lib/embed_local.R, which picks llama-swap's OpenAI shape
-# when LLM_LOCAL_BACKEND says so - llama-swap does not serve /api/embeddings.
-.okf_embed_url <- function(u) {
-  if (!identical(u, Sys.getenv("OLLAMA_URL", "http://localhost:11434")))
-    return(paste0(sub("/+$", "", u), "/api/embeddings"))
-  NULL
+# (url, shape) for the local embedder; shape is "openai" | "ollama_batch" |
+# "ollama_single". Kept in lockstep with okf.rag._embed_endpoint (py) -- the
+# resolution order and the path->shape mapping are the shared contract.
+.okf_embed_endpoint <- function(base = NULL) {
+  u <- if (!is.null(base) && nzchar(base)) paste0(sub("/+$", "", base), "/api/embeddings")
+       else Sys.getenv("LLM_EMBED_URL", "")
+  if (!nzchar(u)) {
+    if (tolower(trimws(Sys.getenv("LLM_LOCAL_BACKEND", "ollama"))) == "llamaswap") {
+      root <- sub("/+$", "", Sys.getenv("LLAMASWAP_URL", "http://127.0.0.1:11435/v1/chat/completions"))
+      root <- sub("/v1/chat/completions$", "", root)
+      u <- paste0(root, "/v1/embeddings")
+    } else {
+      u <- paste0(sub("/+$", "", Sys.getenv("OLLAMA_URL", "http://localhost:11434")), "/api/embeddings")
+    }
+  }
+  p <- sub("/+$", "", u)
+  shape <- if (grepl("/v1/embeddings$", p)) "openai"
+           else if (grepl("/api/embeddings$", p)) "ollama_single" else "ollama_batch"
+  list(url = u, shape = shape)
 }
 
 .okf_vec_lit <- function(v) paste0("[", paste(vapply(v, function(z) sprintf("%.8g", z), ""),
