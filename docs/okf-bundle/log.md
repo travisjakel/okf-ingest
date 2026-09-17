@@ -3,11 +3,26 @@ type: Log
 title: Change log
 description: Chronological history of the okf-ingest self-bundle.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
 tags: [log]
 ---
 
 # Change log
 
+- **2026-09-17** 0.12.3 — the self-bundle catches up, and is rewritten in
+  **OKF v0.2**. It had documented a two-binding, pre-trust package since June
+  while the package grew to five bindings, the SPEC 5 trust families and SPEC 10
+  Attested Computations. New: [trust & lifecycle](trust.md),
+  [Attested Computations](computations.md), and one real contract
+  ([conformance corpus size](computations/corpus-size.md)) so a number the docs
+  state is executable rather than merely written down. Every page carries
+  `generated` and a SPEC 5.4 `status`; citations go through
+  [references](references/index.md), because a `sources[].resource` that points
+  at `../../r/okf` names something real and still reads as a broken reference to
+  anyone who fetched this bundle alone. `generated.at` is each page's own
+  recorded `timestamp`, not the date the field was added — stamping today on a
+  page written in June would manufacture the provenance the field exists to
+  record.
 - **2026-06-23** Creation — okf-ingest documents itself as an OKF bundle
   (dogfood): determinism, the OKF format, catalog, conformance, bindings,
   sources, validate, the concept graph, query, context, cli, install, render,

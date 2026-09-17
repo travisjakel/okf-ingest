@@ -3,6 +3,8 @@ type: Reference
 title: Rendering
 description: Turn a bundle into a navigable HTML site, an interactive force-directed graph, or a Mermaid diagram.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [html, graph, mermaid, viz]
 ---
 

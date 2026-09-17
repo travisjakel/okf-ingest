@@ -3,6 +3,8 @@ type: Concept
 title: Context
 description: The index-first, link-following primitive — assemble a bundle slice for an LLM to read directly, no embeddings.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [context, llm, graph]
 ---
 

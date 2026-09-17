@@ -1,8 +1,10 @@
 ---
 type: Reference
 title: The DuckDB catalog
-description: The portable, SQL-queryable catalog that both bindings write — the cross-language interop contract.
+description: The portable, SQL-queryable catalog that all five bindings write — the cross-language interop contract.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [duckdb, schema, catalog]
 ---
 

@@ -3,6 +3,8 @@ type: Reference
 title: Validate
 description: The conformance lint — hard rules (errors) and permissive findings (warnings), with CI exit codes.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [validate, conformance, lint]
 ---
 

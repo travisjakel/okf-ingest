@@ -3,6 +3,8 @@ type: Reference
 title: Semantic search
 description: The optional embed/rag layer — vector search over concept bodies via a local, pluggable embedder.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [rag, embeddings, search]
 ---
 

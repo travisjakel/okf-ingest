@@ -3,6 +3,8 @@ type: Reference
 title: Install
 description: Get okf-ingest from PyPI (Python) or R-universe (R), or run from a clone.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [install, pypi, r-universe]
 ---
 

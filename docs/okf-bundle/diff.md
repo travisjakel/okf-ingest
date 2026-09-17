@@ -3,6 +3,8 @@ type: Runbook
 title: Diff
 description: Deterministic concept-level changelog between two states of a bundle — drift since last ingest, or snapshot vs snapshot.
 timestamp: 2026-06-26T00:00:00Z
+generated: { by: hand, at: 2026-06-26T00:00:00Z }
+status: stable
 tags: [diff, drift, changelog, ci]
 ---
 
@@ -21,6 +23,6 @@ two snapshots.
 Like [doctor](doctor.md) it is pure [deterministic](determinism.md) code — hash
 and set comparison, output sorted by path, no model, no wall clock — and exits
 `0` when identical, `1` when different, so it drops into CI as a change gate.
-A conformance fixture locks the R and Python outputs identical (see
+A conformance fixture locks every binding's output identical (see
 [conformance](conformance.md)); complements [incremental](incremental.md),
 which uses the same `content_hash` to skip unchanged work.

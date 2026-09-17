@@ -3,6 +3,8 @@ type: Concept
 title: The OKF format
 description: What an Open Knowledge Format bundle is — markdown + frontmatter, one concept per file, links as the graph.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [okf, spec]
 ---
 

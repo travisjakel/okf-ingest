@@ -3,6 +3,8 @@ type: Reference
 title: Sources
 description: A bundle source can be a local directory, a git URL, or a tar/zip archive (local or remote).
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [sources, git, fetch]
 ---
 

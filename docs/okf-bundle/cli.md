@@ -1,8 +1,10 @@
 ---
 type: Reference
 title: CLI
-description: The okf command surface — identical verbs in R and Python.
+description: The okf command surface — identical verbs across the bindings.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [cli]
 ---
 

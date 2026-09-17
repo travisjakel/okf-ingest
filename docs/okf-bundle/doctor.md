@@ -3,6 +3,8 @@ type: Runbook
 title: Doctor
 description: One-shot health/maintenance report with a score, CI exit codes, and opt-in safe auto-fixes.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [doctor, maintenance, health, ci]
 ---
 

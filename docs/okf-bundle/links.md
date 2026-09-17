@@ -3,6 +3,8 @@ type: Concept
 title: The concept graph
 description: Markdown links become resolved/broken edges — surfaced as backlinks, impact, clusters, and the graph view.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [graph, links, backlinks]
 ---
 

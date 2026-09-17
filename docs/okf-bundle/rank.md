@@ -3,6 +3,8 @@ type: Runbook
 title: Rank
 description: Personalized PageRank relevance over the concept graph — exact power iteration, deterministic, no embeddings; powers relevance-weighted context.
 timestamp: 2026-07-02T00:00:00Z
+generated: { by: hand, at: 2026-07-02T00:00:00Z }
+status: stable
 tags: [rank, pagerank, retrieval, graph]
 ---
 
@@ -13,7 +15,7 @@ tags: [rank, pagerank, retrieval, graph]
 own link structure, no embeddings, no model. Where PPR is usually approximated
 with Monte-Carlo walks, here it is computed by *exact power iteration*, so it
 is [deterministic](determinism.md) like everything else: a
-[conformance](conformance.md) fixture locks the R and Python bindings to
+[conformance](conformance.md) fixture locks the bindings to
 byte-identical scores.
 
 The walk runs on the undirected resolved-link graph (a page and its citers are

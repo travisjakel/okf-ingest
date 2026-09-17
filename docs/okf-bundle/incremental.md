@@ -3,6 +3,8 @@ type: Concept
 title: Incremental
 description: Re-ingest and re-embed only the concepts whose content changed, via content_hash fingerprints.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [incremental, maintenance]
 ---
 

@@ -3,6 +3,8 @@ type: Reference
 title: Query
 description: Read the catalog with SQL or the built-in helpers — concepts, links, findings, substring search.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [query, sql, duckdb]
 ---
 

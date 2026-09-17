@@ -3,6 +3,8 @@ type: Concept
 title: Determinism & no agents
 description: okf-ingest is pure deterministic machinery — same bundle in, same catalog/graph/render out, with no LLM agents.
 timestamp: 2026-06-23T00:00:00Z
+generated: { by: hand, at: 2026-06-23T00:00:00Z }
+status: stable
 tags: [determinism, design]
 ---
 
