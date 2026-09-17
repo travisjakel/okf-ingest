@@ -42,9 +42,12 @@ fn re_scheme() -> &'static Regex {
 /// 219-concept wiki.
 ///
 /// Simplified CommonMark, chosen so five bindings implement it identically: a
-/// line of >=3 backticks or tildes (indented up to 3 spaces) opens; a line of
-/// >=N of the SAME character with nothing else on it closes. An unclosed fence
-/// masks to the end of the body.
+/// line of three-or-more backticks or tildes (indented up to 3 spaces) opens;
+/// a line of at least that many of the SAME character, with nothing else on
+/// it, closes. An unclosed fence masks to the end of the body.
+///
+/// (Worded to avoid starting a doc line with a comparison operator: clippy's
+/// `doc_lazy_continuation` reads a leading `>` as a blockquote.)
 fn mask_fences(body: &str) -> String {
     let mut out: Vec<String> = Vec::new();
     let mut open: Option<(char, usize)> = None;
