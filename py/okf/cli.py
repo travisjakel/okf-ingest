@@ -23,6 +23,7 @@ import argparse, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import okf.okf as okf  # noqa: E402
 from okf.rag import embed as rag_embed, rag as rag_search, ollama_embedder  # noqa: E402
+from okf.trust import trust as okf_trust, computations as okf_computations  # noqa: E402
 
 import duckdb  # noqa: E402
 
@@ -85,6 +86,11 @@ def main(argv=None):
     df = sub.add_parser("diff"); df.add_argument("a"); df.add_argument("b")
     df.add_argument("--json", action="store_true")
 
+    for _v in ("trust", "computations"):
+        _p = sub.add_parser(_v)
+        _p.add_argument("source")
+        _p.add_argument("--now", default=None)
+        _p.add_argument("--json", action="store_true")
     rk = sub.add_parser("rank"); rk.add_argument("source"); rk.add_argument("concept")
     rk.add_argument("-k", type=int, default=20)
     rk.add_argument("--subdir"); rk.add_argument("--branch"); rk.add_argument("--json", action="store_true")
@@ -253,6 +259,28 @@ def main(argv=None):
             for r, c in sorted(rep["by_rule"].items()):
                 print(f"  {r:<22} {c}")
         return 0 if (rep["n_error"] == 0 and not (a.strict and rep["n_warn"] > 0)) else 1
+
+    if a.cmd in ("trust", "computations"):
+        d, kind, cleanup = okf.fetch(a.source)
+        try:
+            b = okf.read_bundle(d, source_kind=kind)
+            rows = (okf_trust(b, now=a.now) if a.cmd == "trust"
+                    else okf_computations(b, now=a.now))
+        finally:
+            cleanup()
+        if a.json:
+            print(json.dumps(rows, indent=2))
+        elif a.cmd == "trust":
+            for r in rows:
+                stale = "STALE " if r["is_stale"] else ""
+                print(f'{r["path"]:<46} {(r["status"] or "-"):<11} '
+                      f'{r["trust_tier"]:<16} {stale}{r["verified_at"] or "-"}')
+        else:
+            for r in rows:
+                print(f'{r["path"]:<40} runtime={(r["runtime"] or "-"):<10} '
+                      f'form={r["form"]:<7} params={r["n_parameters"]} '
+                      f'executor={r["executor"] or "-"} attester={r["attester"] or "-"}')
+        return 0
 
     if a.cmd == "rank":
         from okf.graph import ppr

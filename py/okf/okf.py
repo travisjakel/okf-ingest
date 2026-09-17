@@ -653,6 +653,27 @@ def search(con, term: str):
         [f"%{term}%"]).fetchall()
 
 
+def _lifecycle_note(v, now_i=None) -> str:
+    """A one-line lifecycle banner for a concept in a context blob, or "".
+
+    Deliberately a blockquote: it reads as an editorial note to the model rather
+    than as part of the concept, and it survives a markdown round-trip."""
+    from .trust import instant as _instant
+    bits = []
+    if v.get("status") == "deprecated":
+        bits.append("DEPRECATED -- kept for links and history, not current (SPEC 5.4)")
+    if v.get("status") == "draft":
+        bits.append("DRAFT -- not yet reviewed, possibly incomplete (SPEC 5.4)")
+    sa = v.get("stale_after")
+    if sa and now_i:
+        sa_i = _instant(sa)
+        if sa_i and now_i >= sa_i:
+            bits.append(f"STALE since {sa} (SPEC 5.5)")
+    if v.get("trust_tier") == "unverified":
+        bits.append("unverified (SPEC 5.3)")
+    return ("> okf: " + " | ".join(bits)) if bits else ""
+
+
 def _bfs_select(cps, adj, nonres, start, depth):
     sel, seen, frontier, dd = [start], {start}, [start], 0
     while dd < depth and frontier:
@@ -668,15 +689,19 @@ def _bfs_select(cps, adj, nonres, start, depth):
     return [p for p in sel if p in nonres]
 
 
-def context(con, start=None, depth: int = 1, max_tokens: int = 8000, include_index: bool = True, rank: str = "bfs", query=None):
+def context(con, start=None, depth: int = 1, max_tokens: int = 8000,
+            include_index: bool = True, rank: str = "bfs", query=None, now=None):
     """Assemble an index-first, link-following slice of a bundle as one markdown
     blob for direct LLM consumption — the OKF / "LLM wiki" consume primitive.
     Uses the concept graph (no embeddings, no vector search). With `start`, walks
     the undirected link graph to `depth`; otherwise packs all concepts. Output is
     capped to ~`max_tokens` (~4 chars/token). Returns a dict with text/included/
     omitted/est_tokens."""
-    cps = {p: {"reserved": r, "title": t, "body": b} for p, r, t, b in con.execute(
-        "SELECT path, reserved, title, body FROM okf_concept").fetchall()}
+    cps = {p: {"reserved": r, "title": t, "body": b, "status": st,
+               "stale_after": sa, "trust_tier": tt}
+           for p, r, t, b, st, sa, tt in con.execute(
+               "SELECT path, reserved, title, body, status, stale_after, trust_tier "
+               "FROM okf_concept").fetchall()}
     adj = {}
     for s, d in con.execute("SELECT src_path, dst_path FROM okf_link WHERE resolved").fetchall():
         adj.setdefault(s, set()).add(d)
@@ -720,10 +745,21 @@ def context(con, start=None, depth: int = 1, max_tokens: int = 8000, include_ind
 
     if include_index and "index.md" in cps:
         add("index.md", cps["index.md"]["body"])
+    # SPEC 11: a consumer SHOULD "surface, not silently drop". Lifecycle is
+    # ANNOTATED, never used to demote or exclude -- a deprecated concept is
+    # still a legitimate link target (upstream acme_retail links to its retired
+    # metric on purpose), so demoting it would trade real retrieval recall for a
+    # warning the reader can be handed for free.
+    from .trust import instant as _instant
+    now_i = _instant(now) if now else None
     for p in sel:
         v = cps[p]
         label = f'{v["title"]} ({p})' if v["title"] else p
-        (inc if add(label, v["body"]) else omit).append(p)
+        body = v["body"]
+        note = _lifecycle_note(v, now_i)
+        if note:
+            body = note + "\n\n" + (body or "")
+        (inc if add(label, body) else omit).append(p)
     res = {"text": "".join(out), "included": inc, "omitted": omit, "est_tokens": used}
     if seeds_used is not None:
         res["seeds"] = [x["path"] for x in seeds_used]

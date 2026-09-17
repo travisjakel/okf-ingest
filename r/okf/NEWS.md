@@ -64,6 +64,43 @@ families, and running our own validator over them found two real defects.
   installed package. Set `OKF_ALLOW_VERSION_MISMATCH=1` to override.
 * Docs: the spec links point at the new repository; the four surfaces still
   claiming v0.1 conformance now say v0.2.
+* **New: the v0.2 semantics, R and Python only.** `okf_trust()` derives SPEC 5.3
+  trust tiers and SPEC 5.5 staleness from the absolute `stale_after` instant,
+  superseding the home-grown `stale_days` age heuristic. `okf_sources()` reads
+  SPEC 5.1 provenance one row per entry, including the footnote-label join into
+  `sources[].id`; it records the spec's signals and, like the spec, refuses to
+  compute a credibility score. `okf_computations()` reads SPEC 10 Attested
+  Computation contracts, and `okf_bind()` performs the deterministic parameter
+  binding plus a canonical sha1 -- SPEC 10.3 makes the attester's job "re-derive
+  the same binding and compare", so the binder belongs in the deterministic
+  layer. R and Python produce identical binding hashes. Nothing here executes or
+  attests anything.
+* Ten new `okf_doctor()` rules over those families, each negative-tested before
+  being believed. The catalog gains trust/lifecycle columns on `okf_concept`
+  plus `okf_source` and `okf_computation` tables; the catalog-free bindings are
+  unaffected.
+* **Producer extensions are not misread.** `status` is a closed vocabulary in
+  SPEC 5.4 and a producer extension everywhere else. Values outside the spec
+  vocabulary are treated as ABSENT, never mapped, and reported as `info`
+  (`status_not_spec_vocabulary`), as is a family key carrying the wrong shape
+  entirely (`family_not_spec_shape`). Measured on a 220-concept wiki that writes
+  `status: active` and `sources: 3`: zero concepts relabelled, zero new
+  warn/error findings. That wiki also proved the need for shape checks before
+  indexing -- `$` on an atomic vector is a hard error in R, and one such concept
+  aborted the ingest of the whole bundle.
+* `okf_context()` annotates each included concept with its lifecycle state
+  (deprecated / draft / stale / unverified) when `now` is supplied. Annotated,
+  never demoted or dropped: SPEC 11 says surface rather than silently drop, and
+  a deprecated concept is still a legitimate link target, so demoting it would
+  trade measurable retrieval recall for a warning the reader can be handed for
+  free. Selection is unchanged, verified.
+* New CLI verbs `okf trust` and `okf computations`, identical in R and Python.
+* Retrieval was measured, not assumed, on the LOLO bench: the frontmatter edges
+  leave `wiki` and `interpretable_ml_wiki` bit-identical (neither uses v0.2 path
+  fields, so the graphs are unchanged at 713 and 278 edges), and on upstream's
+  `acme_retail` they take the graph 29 -> 39 edges with every method improving
+  (query-ppr R@5 .689 -> .835, MRR .653 -> .854; the eval set also grows 6 -> 8
+  pages, so read the direction rather than the decimal).
 
 # okf 0.11.0
 

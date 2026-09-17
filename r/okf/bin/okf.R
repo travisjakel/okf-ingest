@@ -14,6 +14,8 @@
 #   okf doctor   <bundle|db> [--strict] [--stale-days N] [--fix] [--json]  # health / maintenance
 #   okf diff     <a> <b> [--json]                     # concept-level changelog; each side a bundle dir or .duckdb
 #   okf rank     <bundle|db> <concept> [-k N] [--json]  # Personalized PageRank relevance to a concept
+#   okf trust    <bundle> [--now ISO] [--json]        # SPEC 5 trust tiers + lifecycle per concept
+#   okf computations <bundle> [--now ISO] [--json]    # SPEC 10 Attested Computation contracts
 #   okf embed    <db> [--model nomic-embed-text] [--incremental] [--json]
 #   okf rag      <db> --query "..." [-k 5] [--model nomic-embed-text] [--json]
 #
@@ -223,6 +225,32 @@ if (cmd == "validate") {
   }
   ok <- rep$n_error == 0 && !(flag("--strict") && rep$n_warn > 0)
   quit(status = if (ok) 0 else 1)
+
+} else if (cmd == "trust" || cmd == "computations") {
+  if (is.na(pos)) { cat(cmd, ": usage: okf ", cmd, " <bundle|db> [--now ISO] [--json]
+", sep = ""); quit(status = 2) }
+  rd <- if (grepl("[.]duckdb$", pos) && file.exists(pos))
+          stop("trust/computations read a bundle, not a catalog: pass the bundle directory")
+        else { f <- okf_fetch(pos, subdir = optval("--subdir"), branch = optval("--branch"))
+               on.exit(f$cleanup(), add = TRUE)
+               okf_read(f$dir, source_kind = f$source_kind) }
+  now <- optval("--now")
+  dash <- function(x) if (length(x) != 1L || is.na(x) || !nzchar(x)) "-" else x
+  df <- if (cmd == "trust") okf_trust(rd, now = now) else okf_computations(rd, now = now)
+  if (out_json) emit(df)
+  else if (cmd == "trust")
+    for (i in seq_len(nrow(df)))
+      cat(sprintf("%-46s %-11s %-16s %s%s
+", df$path[i], dash(df$status[i]),
+                  df$trust_tier[i], if (isTRUE(df$is_stale[i])) "STALE " else "",
+                  dash(df$verified_at[i])))
+  else
+    for (i in seq_len(nrow(df)))
+      cat(sprintf("%-40s runtime=%-10s form=%-7s params=%d executor=%s attester=%s
+",
+                  df$path[i], dash(df$runtime[i]), df$form[i], df$n_parameters[i],
+                  dash(df$executor[i]), dash(df$attester[i])))
+  quit(status = 0)
 
 } else if (cmd == "rank") {
   if (is.na(pos) || is.na(args[3])) { cat("rank: usage: okf rank <bundle|db> <concept> [-k N]\n"); quit(status = 2) }

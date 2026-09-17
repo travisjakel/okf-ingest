@@ -12,7 +12,8 @@ okf_context(
   max_tokens = 8000L,
   include_index = TRUE,
   rank = c("bfs", "ppr"),
-  query = NULL
+  query = NULL,
+  now = NULL
 )
 }
 \arguments{
@@ -36,6 +37,12 @@ relevance -- hubs no longer drown out the pages that matter).}
 are chosen lexically via [okf_seeds()], then the graph is ranked by
 multi-seed PPR (weights proportional to lexical scores) and the budget
 fills by relevance. Deterministic hybrid retrieval -- no embeddings.}
+
+\item{now}{Optional ISO-8601 reference time. Supplied, each included concept
+whose SPEC 5.5 `stale_after` has passed carries a staleness note. Lifecycle
+state is annotated, never used to demote or drop a concept: SPEC 11 asks a
+consumer to surface it, and a deprecated concept is still a real link
+target.}
 }
 \value{
 A list with `text` (the markdown blob), `included`/`omitted` concept

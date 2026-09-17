@@ -53,7 +53,11 @@ def load_bundle(path):
         "SELECT path, title, description, tags, body, reserved "
         "FROM okf_concept ORDER BY path").fetchall()
     lks = con.execute(
-        "SELECT DISTINCT src_path, dst_path FROM okf_link WHERE resolved").fetchall()
+        "SELECT DISTINCT src_path, dst_path FROM okf_link WHERE resolved"
+        # OKF_BENCH_BODY_ONLY isolates the SPEC 6.2 frontmatter edges added in
+        # 0.12.0, so their effect on retrieval is measured, not assumed.
+        + (" AND kind IN ('body','wikilink')" if os.environ.get("OKF_BENCH_BODY_ONLY") else "")
+    ).fetchall()
     con.close()
     pages = {r[0]: {"title": r[1], "description": r[2], "tags": r[3],
                     "body": r[4], "reserved": bool(r[5])} for r in cps}

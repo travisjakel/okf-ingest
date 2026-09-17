@@ -768,6 +768,27 @@ okf_embed <- function(con, embedder = NULL, target_chars = 600L, incremental = F
   n
 }
 
+# A one-line lifecycle banner for a concept included in a context blob, or "".
+# Deliberately a blockquote: it reads as an editorial note to the model rather
+# than as part of the concept, and it survives a markdown round-trip.
+.okf_lifecycle_note <- function(row, now_i = NULL) {
+  bits <- character(0)
+  st <- row$status[1]
+  if (!is.na(st) && st == "deprecated")
+    bits <- c(bits, "DEPRECATED -- kept for links and history, not current (SPEC 5.4)")
+  if (!is.na(st) && st == "draft")
+    bits <- c(bits, "DRAFT -- not yet reviewed, possibly incomplete (SPEC 5.4)")
+  sa <- row$stale_after[1]
+  if (!is.na(sa) && !is.null(now_i)) {
+    sa_i <- .okf_instant(sa)
+    if (!is.na(sa_i) && now_i >= sa_i) bits <- c(bits, paste0("STALE since ", sa, " (SPEC 5.5)"))
+  }
+  tt <- row$trust_tier[1]
+  if (!is.na(tt) && tt == "unverified") bits <- c(bits, "unverified (SPEC 5.3)")
+  if (!length(bits)) return("")
+  paste0("> okf: ", paste(bits, collapse = " | "))
+}
+
 #' Assemble an index-first, link-following slice of a bundle as one markdown
 #' blob for direct LLM consumption.
 #'
@@ -792,15 +813,21 @@ okf_embed <- function(con, embedder = NULL, target_chars = 600L, incremental = F
 #'   are chosen lexically via [okf_seeds()], then the graph is ranked by
 #'   multi-seed PPR (weights proportional to lexical scores) and the budget
 #'   fills by relevance. Deterministic hybrid retrieval -- no embeddings.
+#' @param now Optional ISO-8601 reference time. Supplied, each included concept
+#'   whose SPEC 5.5 `stale_after` has passed carries a staleness note. Lifecycle
+#'   state is annotated, never used to demote or drop a concept: SPEC 11 asks a
+#'   consumer to surface it, and a deprecated concept is still a real link
+#'   target.
 #' @return A list with `text` (the markdown blob), `included`/`omitted` concept
 #'   paths, `est_tokens`, and (for `query`) the `seeds` used.
 #' @export
 okf_context <- function(con, start = NULL, depth = 1L, max_tokens = 8000L,
                         include_index = TRUE, rank = c("bfs", "ppr"),
-                        query = NULL) {
+                        query = NULL, now = NULL) {
   rank <- match.arg(rank)
   if (!is.null(query) && !is.null(start)) stop("give either start or query, not both")
-  cps <- DBI::dbGetQuery(con, "SELECT path, reserved, title, body FROM okf_concept")
+  cps <- DBI::dbGetQuery(con, paste("SELECT path, reserved, title, body, status,",
+    "stale_after, trust_tier FROM okf_concept"))
   lks <- DBI::dbGetQuery(con, "SELECT src_path, dst_path FROM okf_link WHERE resolved")
   nonres <- cps$path[!as.logical(cps$reserved)]
 
@@ -844,10 +871,19 @@ okf_context <- function(con, start = NULL, depth = 1L, max_tokens = 8000L,
     idx <- cps[cps$path == "index.md", ]
     if (nrow(idx)) add_sec("index.md", idx$body[1])
   }
+  # SPEC 11: a consumer SHOULD "surface, not silently drop". Lifecycle is
+  # ANNOTATED, never used to demote or exclude -- a deprecated concept is still
+  # a legitimate link target (upstream acme_retail links to its retired metric
+  # on purpose), so demoting it would trade real retrieval recall for a warning
+  # the reader can be handed for free. `now` enables the staleness note.
+  now_i <- if (is.null(now)) NULL else .okf_instant(now)
   for (p in sel) {
     row <- cps[cps$path == p, ]
     label <- if (!is.na(row$title[1]) && nzchar(row$title[1])) sprintf("%s (%s)", row$title[1], p) else p
-    if (add_sec(label, row$body[1])) inc <- c(inc, p) else omit <- c(omit, p)
+    body <- row$body[1]
+    note <- .okf_lifecycle_note(row, now_i)
+    if (nzchar(note)) body <- paste0(note, "\n\n", body %||% "")
+    if (add_sec(label, body)) inc <- c(inc, p) else omit <- c(omit, p)
   }
   res <- list(text = out, included = inc, omitted = omit, est_tokens = used)
   if (!is.null(seeds_used)) res$seeds <- seeds_used$path
