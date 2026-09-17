@@ -138,5 +138,47 @@ for (pth in names(exv$timestamps)) {
 }
 DBI::dbDisconnect(rv$con, shutdown = TRUE)
 
+# v0.2 Attested Computation: SPEC 6.2 path-valued frontmatter fields as graph
+# edges, non-concept targets, scope descriptors, both computation forms.
+ra  <- okf_ingest(file.path(here, "bundles", "v02_attested"))
+exa <- jsonlite::fromJSON(file.path(here, "expected", "v02_attested.json"))
+chk("v02a.n_files",      ra$summary$n_files,      exa$bundle$n_files)
+chk("v02a.n_concepts",   ra$summary$n_concepts,   exa$bundle$n_concepts)
+chk("v02a.n_conformant", ra$summary$n_conformant, exa$bundle$n_conformant)
+chk("v02a.conformant",   ra$summary$conformant,   exa$bundle$conformant)
+chk("v02a.errors",       ra$summary$errors,       exa$validation$errors)
+chk("v02a.warnings",     ra$summary$warnings,     exa$validation$warnings)
+chk("v02a.links_total",  ra$summary$links_total,  exa$links$total)
+chk("v02a.links_broken", ra$summary$links_broken, exa$links$broken)
+rules_a <- DBI::dbGetQuery(ra$con, "SELECT DISTINCT rule FROM okf_validation")$rule
+for (fr in exa$validation$forbidden_rules)
+  chk(paste0("v02a.no_", fr), fr %in% rules_a, FALSE)
+rc <- DBI::dbGetQuery(ra$con, "SELECT rule, COUNT(*) n FROM okf_validation GROUP BY rule")
+for (rl in names(exa$validation$rule_counts))
+  chk(paste0("v02a.rule[", rl, "]"), as.integer(sum(rc$n[rc$rule == rl])),
+      as.integer(exa$validation$rule_counts[[rl]]))
+bk <- DBI::dbGetQuery(ra$con, "SELECT kind, COUNT(*) n FROM okf_link GROUP BY kind")
+for (kd in names(exa$links$by_kind))
+  chk(paste0("v02a.kind[", kd, "]"), as.integer(sum(bk$n[bk$kind == kd])),
+      as.integer(exa$links$by_kind[[kd]]))
+bt <- DBI::dbGetQuery(ra$con, "SELECT target, COUNT(*) n FROM okf_link GROUP BY target")
+for (tg in names(exa$links$by_target))
+  chk(paste0("v02a.target[", tg, "]"), as.integer(sum(bt$n[bt$target == tg])),
+      as.integer(exa$links$by_target[[tg]]))
+la <- DBI::dbGetQuery(ra$con, "SELECT src_path, dst_raw, dst_path FROM okf_link")
+for (key in names(exa$resolutions)) {
+  if (startsWith(key, "_")) next
+  pp <- strsplit(key, "|", fixed = TRUE)[[1]]
+  chk(paste0("v02a.", key), la$dst_path[la$src_path == pp[1] & la$dst_raw == pp[2]],
+      exa$resolutions[[key]])
+}
+tsa <- DBI::dbGetQuery(ra$con, "SELECT path, timestamp FROM okf_concept")
+for (pth in names(exa$timestamps)) {
+  if (startsWith(pth, "_")) next
+  chk(paste0("v02a.timestamp[", pth, "]"), tsa$timestamp[tsa$path == pth],
+      exa$timestamps[[pth]])
+}
+DBI::dbDisconnect(ra$con, shutdown = TRUE)
+
 if (length(fails)) { cat("FAIL\n  ", paste(fails, collapse = "\n  "), "\n"); quit(status = 1) }
 cat("PASS — R binding conformant on all fixtures\n")

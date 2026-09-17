@@ -33,10 +33,15 @@ _OKFLoader.yaml_implicit_resolvers = {
     k: [(tag, rx) for tag, rx in v if tag != "tag:yaml.org,2002:timestamp"]
     for k, v in yaml.SafeLoader.yaml_implicit_resolvers.items()
 }
-_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+# SPEC 5: every timestamp-valued key is an ISO 8601 datetime with an explicit
+# UTC offset. Upstream made this literal on 2026-08-21 and the reference bundles
+# now emit "+00:00", so a trailing-Z-only pattern rejected 44 of 44 conformant
+# concepts. A bare local datetime still fails: the offset is the point.
+_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$")
 _LINK = re.compile(r"\]\(\s*([^)\s]+)")
 _WIKILINK = re.compile(r"\[\[([^\]]+)\]\]")
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+_WS = re.compile(r"\s")
 
 # Mirror of schema/catalog.sql (that file is canonical; keep in sync).
 SCHEMA = """
@@ -48,7 +53,7 @@ CREATE TABLE IF NOT EXISTS okf_concept (bundle_id TEXT, path TEXT, reserved BOOL
   body TEXT, frontmatter TEXT, parse_error TEXT, content_hash TEXT,
   PRIMARY KEY (bundle_id, path));
 CREATE TABLE IF NOT EXISTS okf_link (bundle_id TEXT, src_path TEXT, dst_raw TEXT,
-  dst_path TEXT, resolved BOOLEAN);
+  dst_path TEXT, resolved BOOLEAN, kind TEXT, target TEXT);
 CREATE TABLE IF NOT EXISTS okf_validation (bundle_id TEXT, path TEXT, severity TEXT,
   rule TEXT, message TEXT);
 CREATE TABLE IF NOT EXISTS okf_chunk (bundle_id TEXT, path TEXT, chunk_id INTEGER,
@@ -82,6 +87,10 @@ class Bundle:
     source_kind: str
     concepts: list = field(default_factory=list)
     known: set = field(default_factory=set)
+    # Every file in the tree, not only concepts: SPEC 6.2 path-valued fields and
+    # SPEC 6.3 `references/` routinely point at non-markdown artifacts (an
+    # attester .py, a computation .sql). Those are real targets, not broken links.
+    files: set = field(default_factory=set)
 
 
 def _s(x):
@@ -214,15 +223,87 @@ def resolve_link(raw: str, src_rel: str, known: set) -> Optional[str]:
     return cand if cand in known else None
 
 
+def fm_paths(fm: Optional[dict]) -> list:
+    """Path-valued frontmatter fields (SPEC 6.2): `resource`, `sources[].resource`,
+    `computation`, `executor.resource`, `attester.resource`. Fixed order, so the
+    edge list stays deterministic."""
+    if not fm:
+        return []
+    out = []
+
+    def push(kind, v):
+        if v is None:
+            return
+        if isinstance(v, (list, tuple)):
+            v = v[0] if v else None
+        if v is None:
+            return
+        v = str(v)
+        if v:
+            out.append({"kind": kind, "raw": v})
+
+    push("resource", fm.get("resource"))
+    push("computation", fm.get("computation"))
+    ex = fm.get("executor")
+    if isinstance(ex, dict):
+        push("executor", ex.get("resource"))
+    at = fm.get("attester")
+    if isinstance(at, dict):
+        push("attester", at.get("resource"))
+    ss = fm.get("sources")
+    if isinstance(ss, dict):
+        ss = [ss]
+    if isinstance(ss, list):
+        for src in ss:
+            if isinstance(src, dict):
+                push("source", src.get("resource"))
+    return out
+
+
+def _is_scope(raw: str) -> bool:
+    """A `sources[].resource` MAY be a scope descriptor rather than a path
+    (SPEC 5.1), e.g. "all queries in BigQuery project X". A path never contains
+    whitespace, which is the only signal the spec gives."""
+    return bool(_WS.search(raw))
+
+
+def resolve_path(raw: str, src_rel: str, targets) -> tuple:
+    """Resolve a path-valued frontmatter field. Applies the SPEC 6.2 reading
+    first (a leading "/" is bundle-relative, otherwise relative to the concept's
+    own directory); if that finds nothing, falls back to the bundle root. The
+    fallback exists because the reference bundles write root-relative paths
+    WITHOUT the leading slash -- all 12 frontmatter paths in upstream's
+    acme_retail resolve that way and none resolve the spec-literal way -- and a
+    consumer is required to be permissive (SPEC 11).
+
+    Returns (path_or_None, how) where how is "spec", "root" or None."""
+    t = raw.split("#", 1)[0]
+    if t.startswith("/"):
+        spec = _norm(t[1:])
+    else:
+        d = os.path.dirname(src_rel)
+        spec = _norm(t if d == "" else f"{d}/{t}")
+    if spec in targets:
+        return spec, "spec"
+    root = _norm(t[1:] if t.startswith("/") else t)
+    if root in targets:
+        return root, "root"
+    return None, None
+
+
 def read_bundle(root: str, bundle_id: Optional[str] = None, source_kind: str = "dir") -> Bundle:
     root = os.path.realpath(root).replace("\\", "/")
     files = []
+    all_files = set()
     for dp, dns, fns in os.walk(root):
         # skip hidden directories (.git/.github/.githooks/…) — tooling, not
         # concepts — to match R's list.files() default (parity).
         dns[:] = [d for d in dns if not d.startswith(".")]
         for fn in fns:
-            if fn.endswith(".md") and not fn.startswith("."):
+            if fn.startswith("."):
+                continue
+            all_files.add(os.path.relpath(os.path.join(dp, fn), root).replace('\\', '/'))
+            if fn.endswith(".md"):
                 files.append(os.path.join(dp, fn))
     files.sort()
     concepts = []
@@ -244,23 +325,59 @@ def read_bundle(root: str, bundle_id: Optional[str] = None, source_kind: str = "
     okf_version = _s((idx[0].frontmatter or {}).get("okf_version")) if idx else None
     if bundle_id is None:
         bundle_id = hashlib.sha1(root.encode("utf-8")).hexdigest()
-    return Bundle(bundle_id, root, okf_version, source_kind, concepts, known)
+    return Bundle(bundle_id, root, okf_version, source_kind, concepts, known, all_files)
 
 
 def links(b: Bundle) -> list:
+    """Three edge sources, in this order: markdown links, [[wikilink]] references,
+    and the path-valued frontmatter fields of SPEC 6.2. The last group carries the
+    derivation and execution edges, which appear nowhere in the body: on upstream
+    acme_retail they are 12 edges against 30 body edges, and without them "what
+    depends on this policy" is answerable only from the directory index.
+
+    `target` says what the reference points at: "concept" (the only case that
+    forms a graph edge), "file" (a real non-concept file in the bundle, such as
+    an attester .py -- present, so not broken), "scope" (a SPEC 5.1 scope
+    descriptor, not a path at all), or "missing"."""
     out = []
     idx = _wiki_index(b.concepts)
+    targets = b.files or b.known
     for c in b.concepts:
         for raw in c.links_raw:
             if _is_external(raw):
                 continue
             dst = resolve_link(raw, c.path, b.known)
-            out.append({"src_path": c.path, "dst_raw": raw,
-                        "dst_path": dst, "resolved": dst is not None})
+            if dst is not None:
+                tgt = "concept"
+            else:
+                tgt = "file" if resolve_path(raw, c.path, targets)[0] else "missing"
+            out.append({"src_path": c.path, "dst_raw": raw, "dst_path": dst,
+                        "resolved": dst is not None, "kind": "body", "target": tgt})
         for raw in c.wikilinks_raw:
             dst = resolve_wiki(raw, idx, b.known)
+            out.append({"src_path": c.path, "dst_raw": raw, "dst_path": dst,
+                        "resolved": dst is not None, "kind": "wikilink",
+                        "target": "concept" if dst is not None else "missing"})
+    # Frontmatter edges are appended last, so body-link ordering is untouched.
+    for c in b.concepts:
+        for fp in fm_paths(c.frontmatter):
+            raw, kind = fp["raw"], fp["kind"]
+            if _is_external(raw):
+                continue
+            if kind == "source" and _is_scope(raw):
+                out.append({"src_path": c.path, "dst_raw": raw, "dst_path": None,
+                            "resolved": False, "kind": kind, "target": "scope"})
+                continue
+            path, _how = resolve_path(raw, c.path, targets)
+            if path is None:
+                out.append({"src_path": c.path, "dst_raw": raw, "dst_path": None,
+                            "resolved": False, "kind": kind, "target": "missing"})
+                continue
+            is_concept = path in b.known
             out.append({"src_path": c.path, "dst_raw": raw,
-                        "dst_path": dst, "resolved": dst is not None})
+                        "dst_path": path if is_concept else None,
+                        "resolved": is_concept, "kind": kind,
+                        "target": "concept" if is_concept else "file"})
     return out
 
 
@@ -287,8 +404,34 @@ def validate(b: Bundle) -> list:
             add(c.path, "warn", "timestamp_not_iso8601", f"timestamp not ISO-8601: {c.timestamp}")
     lk_all = links(b)
     for lk in lk_all:
-        if not lk["resolved"]:
-            add(lk["src_path"], "warn", "broken_link", f"unresolved link: {lk['dst_raw']}")
+        if lk["target"] in ("concept", "scope"):
+            continue
+        raw = lk["dst_raw"]
+        if lk["target"] == "file":
+            # The target exists, it is simply not a concept (an attester .py, a
+            # computation .sql). SPEC 6.2 and 6.3 expect exactly this; not a defect.
+            add(lk["src_path"], "info", "non_concept_target",
+                f"reference resolves to a non-concept file: {raw}")
+        elif lk["kind"] in ("body", "wikilink"):
+            add(lk["src_path"], "warn", "broken_link", f"unresolved link: {raw}")
+        else:
+            add(lk["src_path"], "warn", "broken_reference",
+                f"unresolved {lk['kind']} path: {raw}")
+    # A frontmatter path that resolves only against the bundle root, though SPEC
+    # 6.2 reserves that meaning for a leading slash. Reported so a producer can
+    # fix it; consumed regardless, because a consumer must be permissive (SPEC 11).
+    _targets = b.files or b.known
+    for c in b.concepts:
+        for fp in fm_paths(c.frontmatter):
+            raw, kind = fp["raw"], fp["kind"]
+            if _is_external(raw) or (kind == "source" and _is_scope(raw)):
+                continue
+            if raw.startswith("/"):
+                continue
+            if resolve_path(raw, c.path, _targets)[1] == "root":
+                add(c.path, "info", "path_root_relative",
+                    f"{kind} path resolves against the bundle root, not the concept "
+                    f"directory; SPEC 6.2 reserves that for a leading slash: {raw}")
     # orphan concepts (Karpathy-style lint): non-reserved, parseable, no inbound link
     inbound = {lk["dst_path"] for lk in lk_all if lk["resolved"]}
     for c in b.concepts:
@@ -455,8 +598,9 @@ def _ingest_bundle(b, db_path, ingested_at, incremental=False):
     con.execute("DELETE FROM okf_link WHERE bundle_id = ?", [bid])
     con.execute("DELETE FROM okf_validation WHERE bundle_id = ?", [bid])
     for lk_ in lk:
-        con.execute("INSERT INTO okf_link VALUES (?,?,?,?,?)",
-                    [bid, lk_["src_path"], lk_["dst_raw"], lk_["dst_path"], lk_["resolved"]])
+        con.execute("INSERT INTO okf_link VALUES (?,?,?,?,?,?,?)",
+                    [bid, lk_["src_path"], lk_["dst_raw"], lk_["dst_path"],
+                     lk_["resolved"], lk_["kind"], lk_["target"]])
     for f in val:
         con.execute("INSERT INTO okf_validation VALUES (?,?,?,?,?)",
                     [bid, f["path"], f["severity"], f["rule"], f["message"]])
@@ -466,7 +610,8 @@ def _ingest_bundle(b, db_path, ingested_at, incremental=False):
         "conformant": len(err_paths) == 0,
         "errors": sum(1 for f in val if f["severity"] == "error"),
         "warnings": sum(1 for f in val if f["severity"] == "warn"),
-        "links_total": len(lk), "links_broken": sum(1 for x in lk if not x["resolved"]),
+        "links_total": len(lk),
+        "links_broken": sum(1 for x in lk if x["target"] == "missing"),
         **inc_stats,
     }
     return con, summary

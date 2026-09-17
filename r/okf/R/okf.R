@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS okf_concept (bundle_id TEXT, path TEXT, reserved BOOL
   body TEXT, frontmatter TEXT, parse_error TEXT, content_hash TEXT,
   PRIMARY KEY (bundle_id, path));
 CREATE TABLE IF NOT EXISTS okf_link (bundle_id TEXT, src_path TEXT, dst_raw TEXT,
-  dst_path TEXT, resolved BOOLEAN);
+  dst_path TEXT, resolved BOOLEAN, kind TEXT, target TEXT);
 CREATE TABLE IF NOT EXISTS okf_validation (bundle_id TEXT, path TEXT, severity TEXT,
   rule TEXT, message TEXT);
 CREATE TABLE IF NOT EXISTS okf_chunk (bundle_id TEXT, path TEXT, chunk_id INTEGER,
@@ -118,6 +118,13 @@ okf_resolve_link <- function(raw, src_rel, known) {
   if (cand %in% known) cand else NA_character_
 }
 
+# SPEC 5: "Every timestamp-valued key in OKF is an ISO 8601 datetime with an
+# explicit UTC offset". Upstream made this literal on 2026-08-21 and the
+# reference bundles now emit "+00:00", so requiring a trailing "Z" rejected 44
+# of 44 conformant concepts. A bare local datetime still fails: the explicit
+# offset is the point of the rule.
+.okf_is_iso8601 <- function(x) grepl("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})$", x)
+
 .is_external <- function(raw) grepl("^[a-zA-Z][a-zA-Z0-9+.-]*:", sub("#.*$", "", raw))
 
 # Name index for wikilink resolution: lowercased id / alias / title / filename-
@@ -172,6 +179,10 @@ okf_read <- function(root, bundle_id = NULL, source_kind = "dir") {
     f <- normalizePath(f, winslash = "/")
     sub("^/", "", substr(f, nchar(root) + 1L, nchar(f)))  # root is a clean prefix
   }
+  # Every file in the tree, not only concepts: SPEC 6.2 path-valued fields and
+  # SPEC 6.3 `references/` routinely point at non-markdown artifacts (an
+  # attester .py, a computation .sql). Those are real targets, not broken links.
+  all_files <- list.files(root, recursive = TRUE)
   concepts <- lapply(files, function(f) {
     p <- okf_parse_file(f)
     list(path = rel_of(f), reserved = basename(f) %in% OKF_RESERVED,
@@ -193,32 +204,122 @@ okf_read <- function(root, bundle_id = NULL, source_kind = "dir") {
   okf_version <- if (length(idx)) .s(idx[[1]]$frontmatter$okf_version) else NA_character_
   if (is.null(bundle_id)) bundle_id <- digest::digest(root, algo = "sha1")
   list(bundle_id = bundle_id, root = root, okf_version = okf_version,
-       source_kind = source_kind, concepts = concepts, known = known)
+       source_kind = source_kind, concepts = concepts, known = known,
+       files = all_files)
+}
+
+# Path-valued frontmatter fields (SPEC 6.2): `resource`, `sources[].resource`,
+# `computation`, `executor.resource`, `attester.resource`. Fixed order, so the
+# edge list stays deterministic.
+.okf_fm_paths <- function(fm) {
+  if (is.null(fm)) return(list())
+  out <- list()
+  push <- function(kind, v) {
+    if (is.null(v) || !length(v)) return(invisible())
+    v <- as.character(v)[1]
+    if (is.na(v) || !nzchar(v)) return(invisible())
+    out[[length(out) + 1L]] <<- list(kind = kind, raw = v)
+  }
+  push("resource", fm$resource)
+  push("computation", fm$computation)
+  if (is.list(fm$executor)) push("executor", fm$executor$resource)
+  if (is.list(fm$attester)) push("attester", fm$attester$resource)
+  if (!is.null(fm$sources)) {
+    ss <- if (is.list(fm$sources) && !is.null(fm$sources$resource)) list(fm$sources) else fm$sources
+    for (s in ss) if (is.list(s)) push("source", s$resource)
+  }
+  out
+}
+
+# A `sources[].resource` MAY be a scope descriptor rather than a path (SPEC
+# 5.1), e.g. "all queries in BigQuery project X". A path never contains
+# whitespace, which is the only signal the spec gives.
+.okf_is_scope <- function(raw) grepl("[[:space:]]", raw)
+
+#' Resolve a path-valued frontmatter field to a bundle-relative path.
+#'
+#' Applies the SPEC 6.2 reading first (a leading `/` is bundle-relative,
+#' otherwise the path is relative to the concept's own directory). If that
+#' finds nothing, falls back to interpreting the path against the bundle root.
+#' The fallback exists because the reference bundles write root-relative paths
+#' *without* the leading slash -- all 12 frontmatter paths in upstream's
+#' `acme_retail` resolve that way and none resolve the spec-literal way -- and
+#' a consumer is required to be permissive (SPEC 11).
+#'
+#' @param raw The field value as written.
+#' @param src_rel Bundle-relative path of the concept carrying the field.
+#' @param targets Character vector of candidate bundle-relative paths.
+#' @return A list with `path` (or `NA`) and `how` (`"spec"`, `"root"`, or `NA`).
+#' @export
+okf_resolve_path <- function(raw, src_rel, targets) {
+  t <- sub("#.*$", "", raw)
+  d <- dirname(src_rel)
+  spec <- if (startsWith(t, "/")) .okf_norm(sub("^/", "", t))
+          else .okf_norm(if (d == ".") t else file.path(d, t))
+  if (spec %in% targets) return(list(path = spec, how = "spec"))
+  root <- .okf_norm(sub("^/", "", t))
+  if (root %in% targets) return(list(path = root, how = "root"))
+  list(path = NA_character_, how = NA_character_)
 }
 
 #' Build the concept graph (resolved and broken links) for a bundle.
 #'
-#' Includes both markdown `](path)` links (resolved by path) and
-#' `[[wikilink]]` references (resolved by name: id / alias / title / stem).
+#' Three edge sources, in this order: markdown `](path)` links (resolved by
+#' path), `[[wikilink]]` references (resolved by name: id / alias / title /
+#' stem), and the path-valued frontmatter fields of SPEC 6.2 -- `resource`,
+#' `sources[].resource`, `computation`, `executor.resource` and
+#' `attester.resource`. That last group carries the derivation and execution
+#' edges, which appear nowhere in the body: on upstream's `acme_retail` they
+#' are 12 edges against 30 body edges, and without them "what depends on this
+#' policy" is answerable only from the directory index.
+#'
+#' `target` says what the reference points at: `"concept"` (a markdown concept,
+#' the only case that forms a graph edge), `"file"` (a real non-concept file in
+#' the bundle, such as an attester `.py` -- present, so not broken), `"scope"`
+#' (a SPEC 5.1 scope descriptor, not a path at all), or `"missing"`.
 #'
 #' @param rd A bundle as returned by [okf_read()].
-#' @return A data.frame with `src_path`, `dst_raw`, `dst_path`, `resolved`.
+#' @return A data.frame with `src_path`, `dst_raw`, `dst_path`, `resolved`,
+#'   `kind` (`body`/`wikilink`/`resource`/`source`/`computation`/`executor`/
+#'   `attester`) and `target`.
 #' @export
 okf_links <- function(rd) {
   rows <- list()
-  add_row <- function(src, raw, dst) rows[[length(rows) + 1]] <<- data.frame(
+  add_row <- function(src, raw, dst, kind, target) rows[[length(rows) + 1]] <<- data.frame(
     src_path = src, dst_raw = raw, dst_path = dst, resolved = !is.na(dst),
-    stringsAsFactors = FALSE)
-  widx <- .okf_wiki_index(rd$concepts)
+    kind = kind, target = target, stringsAsFactors = FALSE)
+  widx  <- .okf_wiki_index(rd$concepts)
+  files <- if (is.null(rd$files)) rd$known else rd$files
   for (c in rd$concepts) {
     for (raw in c$links_raw) {
       if (.is_external(raw)) next
-      add_row(c$path, raw, okf_resolve_link(raw, c$path, rd$known))
+      dst <- okf_resolve_link(raw, c$path, rd$known)
+      tgt <- if (!is.na(dst)) "concept"
+             else if (!is.na(okf_resolve_path(raw, c$path, files)$path)) "file" else "missing"
+      add_row(c$path, raw, dst, "body", tgt)
     }
-    for (raw in c$wikilinks_raw) add_row(c$path, raw, .okf_resolve_wiki(raw, widx, rd$known))
+    for (raw in c$wikilinks_raw) {
+      dst <- .okf_resolve_wiki(raw, widx, rd$known)
+      add_row(c$path, raw, dst, "wikilink", if (!is.na(dst)) "concept" else "missing")
+    }
+  }
+  # Frontmatter edges are appended last, so body-link ordering is untouched.
+  for (c in rd$concepts) {
+    for (fp in .okf_fm_paths(c$frontmatter)) {
+      if (.is_external(fp$raw)) next
+      if (fp$kind == "source" && .okf_is_scope(fp$raw)) {
+        add_row(c$path, fp$raw, NA_character_, fp$kind, "scope"); next
+      }
+      r <- okf_resolve_path(fp$raw, c$path, files)
+      if (is.na(r$path)) { add_row(c$path, fp$raw, NA_character_, fp$kind, "missing"); next }
+      is_concept <- r$path %in% rd$known
+      add_row(c$path, fp$raw, if (is_concept) r$path else NA_character_,
+              fp$kind, if (is_concept) "concept" else "file")
+    }
   }
   if (!length(rows)) return(data.frame(src_path = character(), dst_raw = character(),
-    dst_path = character(), resolved = logical()))
+    dst_path = character(), resolved = logical(), kind = character(),
+    target = character()))
   do.call(rbind, rows)
 }
 
@@ -245,12 +346,36 @@ okf_validate <- function(rd) {
     if (is.na(c$title))       add(c$path, "warn", "missing_title", "recommended field title absent")
     if (is.na(c$description)) add(c$path, "warn", "missing_description", "recommended field description absent")
     if (is.na(c$timestamp))   add(c$path, "warn", "missing_timestamp", "recommended field timestamp absent")
-    else if (!grepl("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$", c$timestamp))
+    else if (!.okf_is_iso8601(c$timestamp))
       add(c$path, "warn", "timestamp_not_iso8601", paste("timestamp not ISO-8601:", c$timestamp))
   }
   lk <- okf_links(rd)
-  if (nrow(lk)) for (i in which(!lk$resolved))
-    add(lk$src_path[i], "warn", "broken_link", paste("unresolved link:", lk$dst_raw[i]))
+  if (nrow(lk)) for (i in seq_len(nrow(lk))) {
+    if (lk$target[i] %in% c("concept", "scope")) next
+    if (lk$target[i] == "file") {
+      # The target exists, it is simply not a concept (an attester .py, a
+      # computation .sql). SPEC 6.2 and 6.3 expect exactly this; not a defect.
+      add(lk$src_path[i], "info", "non_concept_target",
+          paste("reference resolves to a non-concept file:", lk$dst_raw[i]))
+    } else if (lk$kind[i] %in% c("body", "wikilink")) {
+      add(lk$src_path[i], "warn", "broken_link", paste("unresolved link:", lk$dst_raw[i]))
+    } else {
+      add(lk$src_path[i], "warn", "broken_reference",
+          paste0("unresolved ", lk$kind[i], " path: ", lk$dst_raw[i]))
+    }
+  }
+  # A frontmatter path that resolves only against the bundle root, though SPEC
+  # 6.2 reserves that meaning for a leading slash. Reported so a producer can
+  # fix it; consumed regardless, because a consumer must be permissive (SPEC 11).
+  fpaths <- if (is.null(rd$files)) rd$known else rd$files
+  for (c in rd$concepts) for (fp in .okf_fm_paths(c$frontmatter)) {
+    if (.is_external(fp$raw) || (fp$kind == "source" && .okf_is_scope(fp$raw))) next
+    if (startsWith(fp$raw, "/")) next
+    if (identical(okf_resolve_path(fp$raw, c$path, fpaths)$how, "root"))
+      add(c$path, "info", "path_root_relative",
+          paste0(fp$kind, " path resolves against the bundle root, not the concept ",
+                 "directory; SPEC 6.2 reserves that for a leading slash: ", fp$raw))
+  }
   # orphan concepts (Karpathy-style lint): non-reserved, parseable, with no
   # inbound resolved link from anywhere (including index.md).
   inbound <- if (nrow(lk)) unique(lk$dst_path[lk$resolved]) else character(0)
@@ -428,7 +553,8 @@ okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
   DBI::dbExecute(con, "DELETE FROM okf_validation WHERE bundle_id = ?", params = list(bid))
   if (nrow(lk)) DBI::dbAppendTable(con, "okf_link", data.frame(
     bundle_id = bid, src_path = lk$src_path, dst_raw = lk$dst_raw,
-    dst_path = lk$dst_path, resolved = lk$resolved, stringsAsFactors = FALSE))
+    dst_path = lk$dst_path, resolved = lk$resolved, kind = lk$kind,
+    target = lk$target, stringsAsFactors = FALSE))
   if (nrow(val)) DBI::dbAppendTable(con, "okf_validation", data.frame(
     bundle_id = bid, path = val$path, severity = val$severity,
     rule = val$rule, message = val$message, stringsAsFactors = FALSE))
@@ -437,7 +563,8 @@ okf_ingest <- function(root, db_path = ":memory:", ingested_at = NULL,
     n_files = length(rd$concepts), n_concepts = length(non_reserved), n_conformant = n_conf,
     conformant = sum(val$severity == "error") == 0,
     errors = sum(val$severity == "error"), warnings = sum(val$severity == "warn"),
-    links_total = nrow(lk), links_broken = sum(!lk$resolved)), inc_stats))
+    links_total = nrow(lk),
+    links_broken = sum(lk$target == "missing")), inc_stats))
 }
 
 #' Query helpers over an ingested OKF catalog.

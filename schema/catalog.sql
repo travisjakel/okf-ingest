@@ -36,13 +36,18 @@ CREATE TABLE IF NOT EXISTS okf_concept (
   PRIMARY KEY (bundle_id, path)
 );
 
--- Concept graph: one row per markdown link. Untyped directed edges (OKF §4).
+-- Concept graph: one row per reference. Untyped directed edges (OKF §6).
+-- Body links and [[wikilinks]] come first, then the path-valued frontmatter
+-- fields of §6.2 -- those carry the derivation and execution edges.
 CREATE TABLE IF NOT EXISTS okf_link (
   bundle_id  TEXT,
-  src_path   TEXT,                 -- concept that contains the link
-  dst_raw    TEXT,                 -- link target exactly as written
-  dst_path   TEXT,                 -- resolved bundle-relative path (NULL if unresolved)
-  resolved   BOOLEAN               -- spec: consumers MUST tolerate broken links
+  src_path   TEXT,                 -- concept that contains the reference
+  dst_raw    TEXT,                 -- target exactly as written
+  dst_path   TEXT,                 -- resolved bundle-relative path (NULL if not a concept)
+  resolved   BOOLEAN,              -- spec: consumers MUST tolerate broken links
+  kind       TEXT,                 -- body | wikilink | resource | source
+                                   --   | computation | executor | attester
+  target     TEXT                  -- concept | file | scope | missing
 );
 
 -- Conformance findings. severity: 'error' = breaks a hard rule (OKF §6);

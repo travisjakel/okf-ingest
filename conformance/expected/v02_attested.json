@@ -1,0 +1,37 @@
+{
+  "bundle": {
+    "n_files": 11,
+    "n_concepts": 6,
+    "n_conformant": 6,
+    "conformant": true,
+    "_note": "v0.2 Attested Computation bundle. Locks: explicit-offset timestamps (Z, +00:00, -07:00), the SPEC 6.2 path-valued frontmatter fields as graph edges, targets that are real non-concept files, a SPEC 5.1 scope descriptor, verified as a bare mapping AND as a list, status draft/stable/deprecated, stale_after, and both computation forms (inline # Computation fence, and computation: by path)."
+  },
+  "validation": {
+    "errors": 0,
+    "warnings": 1,
+    "forbidden_rules": ["timestamp_not_iso8601", "frontmatter_unparseable", "broken_link"],
+    "rule_counts": {
+      "broken_reference": 1,
+      "non_concept_target": 3,
+      "path_root_relative": 6
+    }
+  },
+  "links": {
+    "total": 22,
+    "broken": 1,
+    "_note": "broken counts target=='missing' only; a reference to a real non-concept file is target=='file' and is NOT broken.",
+    "by_kind": { "body": 13, "source": 4, "executor": 2, "attester": 2, "computation": 1 },
+    "by_target": { "concept": 17, "file": 3, "missing": 1, "scope": 1 }
+  },
+  "resolutions": {
+    "_note": "SPEC 6.2 says a bundle-relative path begins with '/'. Upstream's own reference bundles write them WITHOUT the slash (12 of 12 in acme_retail), so a consumer resolves spec-literal first, then falls back to the bundle root and reports path_root_relative.",
+    "computations/throughput.md|/policies/throughput-policy.md": "policies/throughput-policy.md",
+    "computations/throughput.md|skills/run-local.md": "skills/run-local.md",
+    "metrics/throughput.md|policies/throughput-policy.md": "policies/throughput-policy.md"
+  },
+  "timestamps": {
+    "computations/throughput.md": "2026-08-01T00:00:00Z",
+    "metrics/throughput.md": "2026-08-01T00:00:00+00:00",
+    "metrics/throughput-legacy.md": "2025-02-01T00:00:00Z"
+  }
+}

@@ -129,6 +129,43 @@ d0 = okf_diff(cond, os.path.join(HERE, "bundles", "diff_a"))
 check("diff.drift_identical", d0["identical"], True)
 cond.close()
 
+# v0.2 Attested Computation: SPEC 6.2 path-valued frontmatter fields as graph
+# edges, non-concept targets, scope descriptors, both computation forms.
+cona, sa = okf.ingest(os.path.join(HERE, "bundles", "v02_attested"))
+expa = json.load(open(os.path.join(HERE, "expected", "v02_attested.json")))
+check("v02a.n_files", sa["n_files"], expa["bundle"]["n_files"])
+check("v02a.n_concepts", sa["n_concepts"], expa["bundle"]["n_concepts"])
+check("v02a.n_conformant", sa["n_conformant"], expa["bundle"]["n_conformant"])
+check("v02a.conformant", sa["conformant"], expa["bundle"]["conformant"])
+check("v02a.errors", sa["errors"], expa["validation"]["errors"])
+check("v02a.warnings", sa["warnings"], expa["validation"]["warnings"])
+check("v02a.links_total", sa["links_total"], expa["links"]["total"])
+check("v02a.links_broken", sa["links_broken"], expa["links"]["broken"])
+rules_a = {r[0] for r in cona.execute("SELECT DISTINCT rule FROM okf_validation").fetchall()}
+for fr in expa["validation"]["forbidden_rules"]:
+    check("v02a.no_" + fr, fr in rules_a, False)
+rc = dict(cona.execute("SELECT rule, COUNT(*) FROM okf_validation GROUP BY rule").fetchall())
+for rl, n in expa["validation"]["rule_counts"].items():
+    check("v02a.rule[" + rl + "]", rc.get(rl, 0), n)
+bk = dict(cona.execute("SELECT kind, COUNT(*) FROM okf_link GROUP BY kind").fetchall())
+for kd, n in expa["links"]["by_kind"].items():
+    check("v02a.kind[" + kd + "]", bk.get(kd, 0), n)
+bt = dict(cona.execute("SELECT target, COUNT(*) FROM okf_link GROUP BY target").fetchall())
+for tg, n in expa["links"]["by_target"].items():
+    check("v02a.target[" + tg + "]", bt.get(tg, 0), n)
+la = {r[0] + "|" + r[1]: r[2] for r in
+      cona.execute("SELECT src_path, dst_raw, dst_path FROM okf_link").fetchall()}
+for key, want in expa["resolutions"].items():
+    if key.startswith("_"):
+        continue
+    check("v02a." + key, la.get(key), want)
+ts_a = dict(cona.execute("SELECT path, timestamp FROM okf_concept").fetchall())
+for pth, want in expa["timestamps"].items():
+    if pth.startswith("_"):
+        continue
+    check("v02a.timestamp[" + pth + "]", ts_a.get(pth), want)
+cona.close()
+
 if fails:
     print("FAIL\n  " + "\n  ".join(fails)); sys.exit(1)
 print("PASS — Python binding conformant on all fixtures")
