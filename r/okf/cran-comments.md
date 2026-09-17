@@ -1,6 +1,6 @@
-## Update: 0.7.0 -> 0.11.0
+## Update: 0.7.0 -> 0.12.0
 
-Second update; consolidates four additive releases (see NEWS.md):
+Second update; consolidates five additive releases (see NEWS.md):
 
 * 0.8.0 — `okf_rank()`: Personalized PageRank relevance over the concept
   graph, computed by exact power iteration (deterministic); `okf_context()`
@@ -16,6 +16,15 @@ Second update; consolidates four additive releases (see NEWS.md):
   new `generated: {by, at}` frontmatter when the legacy field is absent;
   new v0.2 field families parse and are preserved. Backward compatible;
   v0.1 bundles unchanged.
+* 0.12.0 — conformance fixes measured against the reference bundles published
+  by the format's maintainers, plus the v0.2 semantics those bundles exercise:
+  timestamps with an explicit UTC offset (previously only a trailing `Z` was
+  accepted, which mis-flagged conformant input); the specification's
+  path-valued frontmatter fields now contribute graph edges; new exported
+  readers `okf_trust()`, `okf_sources()`, `okf_computations()`, `okf_bind()`,
+  `okf_canonicalize()` and `okf_resolve_path()`; new `okf_doctor()` rules over
+  the same families. Additive; existing outputs gain columns but no existing
+  column changes meaning.
 
 No API changes or removals; all additive and offline (no new dependencies).
 

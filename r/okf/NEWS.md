@@ -1,4 +1,4 @@
-# okf (development version)
+# okf 0.12.0
 
 Measured against the four reference bundles in
 `GoogleCloudPlatform/open-knowledge-format`, which moved to its own repository

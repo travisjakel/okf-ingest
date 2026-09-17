@@ -1,6 +1,6 @@
 [package]
 name = "okf-ingest"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Open Knowledge Format (OKF) ingestion - the fixture-locked core: parse, validate, links, exact PPR ranking, query seeding, diff, fetch"
