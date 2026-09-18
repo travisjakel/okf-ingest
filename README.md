@@ -176,7 +176,7 @@ The **bindings** (`r/okf`, `py/okf`, `rust/okf-ingest`, `cpp/`, `matlab/`) are t
 
 ## What it enforces (and tolerates)
 
-Per OKF §6, a bundle is **conformant** iff every non-reserved `.md` has parseable YAML frontmatter with a **non-empty `type`** (a free string — no enum). Everything else is permissive: missing recommended fields, unknown types/keys, broken links, and missing `index.md` produce **findings, never rejection**. See [`docs/SPEC_NOTES.md`](docs/SPEC_NOTES.md).
+Per OKF §6, a bundle is **conformant** iff every non-reserved `.md` has parseable YAML frontmatter with a **non-empty `type`** (a free string — no enum). A root `.okfignore` declares which `.md` files were never concepts (READMEs, schemas, vendored docs); they leave the concept set and stay in the file set, so references to them resolve instead of breaking. Everything else is permissive: missing recommended fields, unknown types/keys, broken links, and missing `index.md` produce **findings, never rejection**. See [`docs/SPEC_NOTES.md`](docs/SPEC_NOTES.md).
 
 ## Install
 
@@ -564,6 +564,11 @@ links) — never content.
 
 **What's "conformant"?** Parseable frontmatter with a non-empty `type` on every
 non-reserved file. Everything else is a finding, never a rejection.
+
+**My repo has a README and a `schema.md` that were never concepts.** List them
+in a `.okfignore` at the bundle root. An ignored file leaves the concept set and
+stays in the tree, so links to it still resolve; writing `type: Doc` on a README
+to silence the validator is the thing this exists to avoid.
 
 **Contributing?** See [CONTRIBUTING.md](CONTRIBUTING.md) — new bindings just need
 to reproduce the conformance corpus.

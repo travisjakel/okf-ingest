@@ -15,6 +15,11 @@ tags: [validate, conformance, lint]
 else — missing recommended fields, broken links, orphans, non-ISO timestamps —
 produces **warnings**, never a rejection.
 
+A bundle declares scaffolding -- READMEs, schemas, vendored deployment docs --
+with [.okfignore](ignore.md); an ignored file is not a concept, so it is never
+validated, and the effect is reported so that shrinking a bundle cannot read as
+healing it.
+
 Exit codes make it CI-friendly: `0` conformant, `1` on errors (or warnings under
 `--strict`), `2` bad invocation. The findings are stored in [the
 catalog](catalog.md) and reused by [doctor](doctor.md), which adds a health score

@@ -19,6 +19,130 @@
 # jsonlite installed; httr2 only for the default Ollama embedder.)
 
 OKF_RESERVED <- c("index.md", "log.md")
+
+# `.okfignore` -- a producer's declaration that some `.md` files in its tree are
+# not concept documents.
+#
+# SPEC 3.1 reserves exactly two filenames and then says "All other `.md` files
+# are concept documents", which leaves a bundle no way to say that its README,
+# its `schema.md`, or a vendored deployment doc was never a concept. Every one
+# of them fails the hard `type:` rule, so a conformant bundle is unreachable for
+# any repository that is also a repository -- 46 such files across this estate's
+# 26 bundles. The alternative "fix" is to put `type: Doc` on a README, which is
+# a lie told to a validator.
+#
+# An ignored file leaves the CONCEPT set and stays in the FILE set, so it is
+# exactly what it always was: an ordinary file in the tree. A reference to it
+# then resolves as `non_concept_target` (info, SPEC 6.2/6.3) instead of as a
+# broken link, and nothing about the catalog schema changes.
+OKF_IGNORE_FILE <- ".okfignore"
+
+# Characters escaped to stay literal in every one of the five bindings' regex
+# engines. Everything else -- `/`, `-`, `_`, alphanumerics, any non-ASCII --
+# passes through UNESCAPED, because Rust's regex crate rejects an unrecognized
+# escape (`\/` is an error there, not a literal slash) where PCRE and
+# std::regex accept it. Escaping only the true metacharacters is the one rule
+# all five agree on.
+.OKF_GLOB_META <- c(".", "\\", "+", "*", "?", "(", ")", "[", "]", "{", "}",
+                    "^", "$", "|")
+
+# Translate one `.okfignore` pattern into a fully anchored regex.
+#
+# The grammar is a deliberately small, completely specified subset of gitignore.
+# Five independent implementations have to agree on it exactly, and gitignore's
+# per-directory cascade and its negation corners are precisely where independent
+# implementations drift -- so there is ONE `.okfignore`, at the bundle root, and
+# no cascade.
+.okf_glob_rx <- function(g) {
+  out <- ""; i <- 1L; n <- nchar(g)
+  while (i <= n) {
+    ch <- substr(g, i, i)
+    if (ch == "*" && i < n && substr(g, i + 1L, i + 1L) == "*") {
+      # `/**/` matches a single `/` as well as any run of directories, so
+      # `a/**/b` matches `a/b`. Without this the pattern everyone writes first
+      # silently matches nothing at the one depth they meant.
+      if (i > 1L && substr(g, i - 1L, i - 1L) == "/" &&
+          i + 2L <= n && substr(g, i + 2L, i + 2L) == "/") {
+        out <- paste0(substr(out, 1L, nchar(out) - 1L), "(?:/.*)?/")
+        i <- i + 3L
+      } else {
+        out <- paste0(out, ".*"); i <- i + 2L
+      }
+    } else if (ch == "*") {
+      out <- paste0(out, "[^/]*"); i <- i + 1L
+    } else if (ch == "?") {
+      out <- paste0(out, "[^/]"); i <- i + 1L
+    } else {
+      out <- paste0(out, if (ch %in% .OKF_GLOB_META) paste0("\\", ch) else ch)
+      i <- i + 1L
+    }
+  }
+  paste0("^", out, "$")
+}
+
+# Parse a bundle's `.okfignore` into match rules. Empty list when absent, which
+# is what makes this a pure addition: a bundle without the file reads exactly as
+# it did before.
+.okf_ignore_rules <- function(root) {
+  f <- file.path(root, OKF_IGNORE_FILE)
+  if (!file.exists(f)) return(list())
+  lines <- readLines(f, warn = FALSE, encoding = "UTF-8")
+  rules <- list()
+  for (ln in lines) {
+    p <- trimws(ln)
+    if (!nzchar(p) || startsWith(p, "#")) next
+    neg <- startsWith(p, "!")
+    if (neg) p <- trimws(substring(p, 2L))
+    if (!nzchar(p)) next
+    dir_only <- endsWith(p, "/")
+    if (dir_only) p <- substr(p, 1L, nchar(p) - 1L)
+    if (!nzchar(p)) next
+    rules[[length(rules) + 1L]] <- list(rx = .okf_glob_rx(p), neg = neg,
+      dir_only = dir_only, anchored = grepl("/", p, fixed = TRUE))
+  }
+  rules
+}
+
+# TRUE when `path` (bundle-relative, forward slashes) is ignored. The LAST
+# matching rule decides, so a `!` line can re-include a file an earlier pattern
+# swept up.
+.okf_is_ignored <- function(path, rules) {
+  if (!length(rules)) return(FALSE)
+  # SPEC 3.1 reserves these two. A bundle that could ignore its own index would
+  # lose its `okf_version` and its directory listing, so they are never
+  # ignorable: an ignore file cannot un-structure the bundle.
+  if (basename(path) %in% OKF_RESERVED) return(FALSE)
+  parts <- strsplit(path, "/", fixed = TRUE)[[1]]
+  dirs  <- if (length(parts) > 1L) parts[-length(parts)] else character(0)
+  pref  <- if (length(dirs))
+    vapply(seq_along(dirs), function(k) paste(dirs[1:k], collapse = "/"),
+           character(1)) else character(0)
+  out <- FALSE
+  for (r in rules) {
+    subj <- if (r$dir_only) { if (r$anchored) pref else dirs
+            } else { if (r$anchored) path else basename(path) }
+    if (length(subj) && any(grepl(r$rx, subj, perl = TRUE))) out <- !r$neg
+  }
+  out
+}
+
+#' Which `.md` files in a bundle its `.okfignore` excludes.
+#'
+#' Reports what the ignore file is doing, so an over-broad pattern cannot
+#' quietly shrink a bundle: an ignored file produces no findings at all, which
+#' is indistinguishable from a clean one unless something counts it.
+#'
+#' @param root Path to the bundle directory.
+#' @return Character vector of bundle-relative paths, possibly empty.
+#' @export
+okf_ignored <- function(root) {
+  root  <- normalizePath(root, winslash = "/", mustWork = TRUE)
+  rules <- .okf_ignore_rules(root)
+  if (!length(rules)) return(character(0))
+  rels <- list.files(root, pattern = "\\.md$", recursive = TRUE)
+  sort(unname(rels[vapply(rels, .okf_is_ignored, logical(1), rules = rules,
+                          USE.NAMES = FALSE)]), method = "radix")
+}
 `%||%` <- function(a, b) if (is.null(a)) b else a
 .s <- function(x) if (is.null(x) || length(x) == 0) NA_character_ else as.character(x)[1]
 
@@ -269,6 +393,19 @@ okf_read <- function(root, bundle_id = NULL, source_kind = "dir") {
   # SPEC 6.3 `references/` routinely point at non-markdown artifacts (an
   # attester .py, a computation .sql). Those are real targets, not broken links.
   all_files <- list.files(root, recursive = TRUE)
+  # `.okfignore` drops files from the CONCEPT set only; they remain in
+  # `all_files`, so a reference to one still resolves -- as a non-concept file.
+  ignore_rules <- .okf_ignore_rules(root)
+  ignored <- character(0)
+  if (length(ignore_rules)) {
+    rels <- vapply(files, rel_of, character(1), USE.NAMES = FALSE)
+    drop <- vapply(rels, .okf_is_ignored, logical(1), rules = ignore_rules,
+                   USE.NAMES = FALSE)
+    # Byte order, not locale collation: the other four bindings sort this way
+    # and a cross-binding fixture compares the lists element by element.
+    ignored <- sort(rels[drop], method = "radix")
+    files   <- files[!drop]
+  }
   concepts <- lapply(files, function(f) {
     p <- okf_parse_file(f)
     list(path = rel_of(f), reserved = basename(f) %in% OKF_RESERVED,
@@ -291,7 +428,7 @@ okf_read <- function(root, bundle_id = NULL, source_kind = "dir") {
   if (is.null(bundle_id)) bundle_id <- digest::digest(root, algo = "sha1")
   list(bundle_id = bundle_id, root = root, okf_version = okf_version,
        source_kind = source_kind, concepts = concepts, known = known,
-       files = all_files)
+       files = all_files, ignored = ignored)
 }
 
 # Path-valued frontmatter fields (SPEC 6.2): `resource`, `sources[].resource`,

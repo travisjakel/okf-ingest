@@ -21,6 +21,124 @@ import duckdb
 
 RESERVED = {"index.md", "log.md"}
 
+# `.okfignore` -- a producer's declaration that some `.md` files in its tree are
+# not concept documents. Mirrors r/okf/R/okf.R; the rationale and the full
+# grammar live there and in docs/okf-bundle/ignore.md.
+#
+# An ignored file leaves the CONCEPT set and stays in the FILE set, so a
+# reference to it resolves as `non_concept_target` (info, SPEC 6.2/6.3) rather
+# than as a broken link, and the catalog schema is unchanged.
+IGNORE_FILE = ".okfignore"
+
+# Escaped to stay literal in every binding's regex engine. Everything else --
+# `/`, `-`, `_`, alphanumerics, any non-ASCII -- passes through UNESCAPED,
+# because Rust's regex crate rejects an unrecognized escape where PCRE and
+# std::regex accept it.
+_GLOB_META = set(".@+*?()[]{}^$|".replace("@", chr(92)))
+
+
+def _glob_rx(g: str) -> str:
+    """Translate one `.okfignore` pattern into a fully anchored regex.
+
+    A deliberately small, completely specified subset of gitignore: five
+    independent implementations have to agree on it exactly, and gitignore's
+    per-directory cascade and its negation corners are where independent
+    implementations drift. One `.okfignore`, at the bundle root, no cascade."""
+    out, i, n = [], 0, len(g)
+    while i < n:
+        ch = g[i]
+        if ch == "*" and i + 1 < n and g[i + 1] == "*":
+            # `/**/` matches a single `/` as well as any run of directories, so
+            # `a/**/b` matches `a/b`. Without this the pattern everyone writes
+            # first silently matches nothing at the one depth they meant.
+            if i > 0 and g[i - 1] == "/" and i + 2 < n and g[i + 2] == "/":
+                out[-1] = "(?:/.*)?/"
+                i += 3
+            else:
+                out.append(".*")
+                i += 2
+        elif ch == "*":
+            out.append("[^/]*"); i += 1
+        elif ch == "?":
+            out.append("[^/]"); i += 1
+        else:
+            out.append(chr(92) + ch if ch in _GLOB_META else ch); i += 1
+    return "^" + "".join(out) + "$"
+
+
+def ignore_rules(root: str) -> list:
+    """Parse a bundle's `.okfignore` into match rules; [] when the file is
+    absent, which is what makes this a pure addition -- a bundle without one
+    reads exactly as it did before."""
+    f = os.path.join(root, IGNORE_FILE)
+    if not os.path.exists(f):
+        return []
+    rules = []
+    with open(f, encoding="utf-8") as fh:
+        for ln in fh.read().splitlines():
+            p = ln.strip()
+            if not p or p.startswith("#"):
+                continue
+            neg = p.startswith("!")
+            if neg:
+                p = p[1:].strip()
+            if not p:
+                continue
+            dir_only = p.endswith("/")
+            if dir_only:
+                p = p[:-1]
+            if not p:
+                continue
+            rules.append({"rx": re.compile(_glob_rx(p)), "neg": neg,
+                          "dir_only": dir_only, "anchored": "/" in p})
+    return rules
+
+
+def is_ignored(path: str, rules: list) -> bool:
+    """True when `path` (bundle-relative, forward slashes) is ignored. The LAST
+    matching rule decides, so a `!` line can re-include a file an earlier
+    pattern swept up."""
+    if not rules:
+        return False
+    # SPEC 3.1 reserves these two. A bundle that could ignore its own index
+    # would lose its `okf_version` and its directory listing, so they are never
+    # ignorable: an ignore file cannot un-structure the bundle.
+    if path.rsplit("/", 1)[-1] in RESERVED:
+        return False
+    dirs = path.split("/")[:-1]
+    pref = ["/".join(dirs[:k + 1]) for k in range(len(dirs))]
+    out = False
+    for r in rules:
+        if r["dir_only"]:
+            subj = pref if r["anchored"] else dirs
+        else:
+            subj = [path] if r["anchored"] else [path.rsplit("/", 1)[-1]]
+        if any(r["rx"].match(s) for s in subj):
+            out = not r["neg"]
+    return out
+
+
+def ignored(root: str) -> list:
+    """Which `.md` files in a bundle its `.okfignore` excludes.
+
+    Reports what the ignore file is doing, so an over-broad pattern cannot
+    quietly shrink a bundle: an ignored file produces no findings at all, which
+    is indistinguishable from a clean one unless something counts it."""
+    root = os.path.realpath(root).replace(chr(92), "/")
+    rules = ignore_rules(root)
+    if not rules:
+        return []
+    out = []
+    for dp, dns, fns in os.walk(root):
+        dns[:] = [d for d in dns if not d.startswith(".")]
+        for fn in fns:
+            if fn.startswith(".") or not fn.endswith(".md"):
+                continue
+            rel = os.path.relpath(os.path.join(dp, fn), root).replace(chr(92), "/")
+            if is_ignored(rel, rules):
+                out.append(rel)
+    return sorted(out)
+
 
 class _OKFLoader(yaml.SafeLoader):
     """SafeLoader restricted to the YAML 1.2 core schema for the two implicit
@@ -120,6 +238,8 @@ class Bundle:
     # SPEC 6.3 `references/` routinely point at non-markdown artifacts (an
     # attester .py, a computation .sql). Those are real targets, not broken links.
     files: set = field(default_factory=set)
+    # Bundle-relative paths excluded by `.okfignore` (see IGNORE_FILE).
+    ignored: list = field(default_factory=list)
 
 
 def _s(x):
@@ -382,6 +502,15 @@ def read_bundle(root: str, bundle_id: Optional[str] = None, source_kind: str = "
             if fn.endswith(".md"):
                 files.append(os.path.join(dp, fn))
     files.sort()
+    # `.okfignore` drops files from the CONCEPT set only; they stay in
+    # `all_files`, so a reference to one still resolves -- as a non-concept file.
+    rules = ignore_rules(root)
+    ign, keep = [], []
+    if rules:
+        for f in files:
+            rel = os.path.relpath(f, root).replace("\\", "/")
+            (ign.append(rel) if is_ignored(rel, rules) else keep.append(f))
+        files = keep
     concepts = []
     for f in files:
         rel = os.path.relpath(f, root).replace("\\", "/")
@@ -401,7 +530,8 @@ def read_bundle(root: str, bundle_id: Optional[str] = None, source_kind: str = "
     okf_version = _s((idx[0].frontmatter or {}).get("okf_version")) if idx else None
     if bundle_id is None:
         bundle_id = hashlib.sha1(root.encode("utf-8")).hexdigest()
-    return Bundle(bundle_id, root, okf_version, source_kind, concepts, known, all_files)
+    return Bundle(bundle_id, root, okf_version, source_kind, concepts, known,
+                  all_files, sorted(ign))
 
 
 def links(b: Bundle) -> list:

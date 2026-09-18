@@ -202,6 +202,32 @@ for key, want in expf["must_extract"].items():
     check("cf." + key, resolved.get(key), want)
 conf.close()
 
+# okfignore: `.okfignore` excludes files from the CONCEPT set, not from the tree.
+# Every path in `ignored` carries no frontmatter at all, so `errors == 0` is only
+# reachable if each rule of the grammar actually matched.
+coni, si = okf.ingest(os.path.join(HERE, "bundles", "okfignore"))
+expi = json.load(open(os.path.join(HERE, "expected", "okfignore.json")))
+for k, want in expi["bundle"].items():
+    check("ign." + k, si[k], want)
+bdi = okf.read_bundle(os.path.join(HERE, "bundles", "okfignore"))
+check("ign.ignored", bdi.ignored, expi["ignored"])
+check("ign.okf_ignored", okf.ignored(os.path.join(HERE, "bundles", "okfignore")),
+      expi["ignored"])
+check("ign.concepts", [r[0] for r in coni.execute(
+    "SELECT path FROM okf_concept WHERE reserved = FALSE ORDER BY path").fetchall()],
+    expi["concepts"])
+check("ign.reserved_still_read", [r[0] for r in coni.execute(
+    "SELECT path FROM okf_concept WHERE reserved = TRUE ORDER BY path").fetchall()],
+    expi["reserved_still_read"])
+# An ignored file stays an ordinary file in the tree, so a reference to it
+# resolves (as a non-concept) instead of breaking.
+check("ign.files_contains", expi["files_contains"] in bdi.files, True)
+check("ign.files_excludes", expi["files_excludes"] in bdi.files, False)
+check("ign.info_rules", [{"path": r[0], "rule": r[1]} for r in coni.execute(
+    "SELECT path, rule FROM okf_validation WHERE severity='info' "
+    "ORDER BY path, rule").fetchall()], expi["info_rules"])
+coni.close()
+
 if fails:
     print("FAIL\n  " + "\n  ".join(fails)); sys.exit(1)
 print("PASS — Python binding conformant on all fixtures")

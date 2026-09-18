@@ -14,6 +14,7 @@
 #pragma once
 
 #include <optional>
+#include <regex>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -27,6 +28,22 @@ namespace okf {
 using json = nlohmann::json;
 
 inline const std::set<std::string> RESERVED = {"index.md", "log.md"};
+
+// `.okfignore` -- a producer's declaration that some .md files in its tree
+// are not concept documents. An ignored file leaves the CONCEPT set and
+// stays in the FILE set, so a reference to it resolves as
+// non_concept_target (info, SPEC 6.2/6.3) rather than as a broken link.
+// Grammar and rationale: okf/ignore.cpp.
+inline const char* IGNORE_FILE = ".okfignore";
+
+struct IgnoreRule {
+    std::regex rx;
+    bool neg = false, dir_only = false, anchored = false;
+};
+
+std::string glob_rx(const std::string& g);
+std::vector<IgnoreRule> ignore_rules(const std::string& root);
+bool is_ignored(const std::string& path, const std::vector<IgnoreRule>& rules);
 
 struct OkfError : std::runtime_error {
     using std::runtime_error::runtime_error;
@@ -58,6 +75,11 @@ struct Bundle {
     // and SPEC 6.3 references/ point at non-markdown artifacts (an attester
     // .py, a computation .sql). Those are real targets, not broken links.
     std::set<std::string> files;
+    // Bundle-relative .md paths excluded by .okfignore. Reported so an
+    // over-broad pattern cannot quietly shrink a bundle: an ignored file
+    // produces no findings at all, which is indistinguishable from a clean
+    // one unless something counts it.
+    std::vector<std::string> ignored;
 };
 
 struct Link {

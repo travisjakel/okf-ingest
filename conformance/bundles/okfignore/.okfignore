@@ -1,0 +1,25 @@
+# Scaffolding, not concepts. Every pattern below is exercised by a file that
+# would FAIL conformance if it were read as a concept.
+
+# A bare name matches the BASENAME at any depth.
+README.md
+
+# A trailing slash makes it a directory. With no other `/` it matches at any
+# depth, so this catches a/_scratch/ as well as _scratch/.
+_scratch/
+
+# With a `/` it is anchored at the bundle root -- other/vendor/ is untouched.
+pkg/vendor/
+
+# `*` stops at a `/`.
+*.draft.md
+
+# `/**/` spans any number of directories, INCLUDING none.
+notes/**/tmp.md
+
+# The last matching line decides, so `!` re-includes.
+!pkg/vendor/keep.md
+
+# Reserved filenames (SPEC 3.1) are never ignorable: a bundle that could hide
+# its own index would lose its okf_version. This line does nothing.
+log.md

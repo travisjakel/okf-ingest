@@ -9,6 +9,20 @@ tags: [log]
 
 # Change log
 
+- **2026-09-18** 0.13.0 — [`.okfignore`](ignore.md). SPEC 3.1 reserves two
+  filenames and calls every other `.md` file a concept, so a bundle had no way
+  to say that its README or its `schema.md` was scaffolding — each one failed
+  the hard `type:` rule, and a conformant bundle was unreachable for any
+  repository that is also a repository. An ignored file leaves the concept set
+  and stays in the file set, so a reference to it resolves as
+  `non_concept_target` rather than breaking, and the catalog schema is
+  unchanged. The grammar is a small, fully specified subset of gitignore with
+  one file at the bundle root and no cascade, locked across all five bindings
+  by `bundles/okfignore`. The count of ignored files is reported by `okf
+  validate`, because an ignored file produces no findings at all and an
+  over-broad pattern would otherwise read as a bundle that got healthier
+  instead of one that got smaller.
+
 - **2026-09-17** 0.12.3 — the self-bundle catches up, and is rewritten in
   **OKF v0.2**. It had documented a two-binding, pre-trust package since June
   while the package grew to five bindings, the SPEC 5 trust families and SPEC 10

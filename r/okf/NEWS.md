@@ -1,3 +1,43 @@
+# okf 0.13.0
+
+* **`.okfignore` — a bundle can now say which `.md` files were never concepts.**
+  SPEC 3.1 reserves exactly two filenames and then says "All other `.md` files
+  are concept documents", which leaves a bundle no way to declare that its
+  README, its `schema.md`, or a vendored deployment doc is scaffolding. Every
+  one of them fails the hard `type:` rule, so a conformant bundle is
+  unreachable for any repository that is also a repository — 46 such files
+  across a 26-bundle estate. The alternative "fix" is to put `type: Doc` on a
+  README, which is a lie told to a validator.
+
+  An ignored file leaves the CONCEPT set and stays in the FILE set, so it is
+  exactly what it always was: an ordinary file in the tree. A reference to it
+  resolves as `non_concept_target` (info, SPEC 6.2/6.3) rather than as a broken
+  link, and **the catalog schema is unchanged** — an ignored file is simply not
+  a row in `okf_concept`.
+
+  The grammar is a deliberately small, completely specified subset of
+  gitignore, because five bindings have to agree on it exactly and gitignore's
+  per-directory cascade and negation corners are where independent
+  implementations drift: **one `.okfignore`, at the bundle root, no cascade**.
+  Bare names match the basename at any depth, a trailing `/` makes a directory
+  pattern, a `/` anywhere anchors at the root, `*` stops at a `/`, `**` does
+  not, `/**/` spans zero or more directories, `!` re-includes and the last
+  matching line wins. `index.md` and `log.md` are never ignorable — a bundle
+  able to hide its own index would lose its `okf_version`.
+
+  New: `okf_ignored(root)` (R), `okf.ignored(root)` (Python), `rd$ignored` /
+  `Bundle.ignored` in all five bindings, and an `ignored:` line in `okf
+  validate`. That reporting is load-bearing rather than cosmetic: an ignored
+  file produces *no findings at all*, which is indistinguishable from a clean
+  one, so an over-broad pattern would otherwise read as a bundle that got
+  healthier instead of one that got smaller.
+
+* `bundles/okfignore` + `expected/okfignore.json` lock the grammar across all
+  five bindings. Each of its seven ignored files carries no frontmatter at all,
+  so `errors: 0` is reachable only if every rule actually matched; three
+  surviving concepts are negative controls for anchoring, re-inclusion and
+  pattern scope.
+
 # okf 0.12.3
 
 * **An integer too large for R no longer becomes `NA`.** R's `yaml` parses a

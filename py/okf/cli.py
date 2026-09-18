@@ -115,9 +115,18 @@ def main(argv=None):
         conf = nerr == 0
         if a.json:
             print(json.dumps({"bundle": a.bundle, "conformant": conf, "errors": nerr,
-                              "warnings": nwarn, "findings": val}, indent=2))
+                              "warnings": nwarn, "ignored": b.ignored,
+                              "findings": val}, indent=2))
         else:
             print(f"bundle: {a.bundle}\nconformant: {conf}  (errors: {nerr}, warnings: {nwarn})")
+            # An ignored file produces no findings at all, which is
+            # indistinguishable from a clean one -- so say how many there are.
+            # Otherwise an over-broad `.okfignore` reads as a bundle that got
+            # healthier rather than one that got smaller.
+            if b.ignored:
+                print(f"ignored: {len(b.ignored)} file(s) via .okfignore "
+                      f"({', '.join(b.ignored[:3])}"
+                      f"{', …' if len(b.ignored) > 3 else ''})")
             for f in val:
                 print(f"  [{f['severity']:<5}] {f['rule']:<22} {f['path']} — {f['message']}")
         return 1 if (not conf or (a.strict and nwarn > 0)) else 0

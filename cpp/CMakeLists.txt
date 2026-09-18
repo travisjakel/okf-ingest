@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(okf_cpp VERSION 0.12.3 LANGUAGES CXX)
+project(okf_cpp VERSION 0.13.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,6 +18,7 @@ add_library(okf_cpp STATIC
   okf/parse.cpp
   okf/links.cpp
   okf/validate.cpp
+  okf/ignore.cpp
   okf/read.cpp
   okf/ingest.cpp
   okf/graph.cpp

@@ -19,6 +19,24 @@ end
 [rels, order] = sort(rels);
 files = files(order);
 
+% `.okfignore` drops files from the CONCEPT set only; they stay in b.files, so
+% a reference to one still resolves -- as a non-concept file. See ignore_rules
+% below, and r/okf/R/okf.R for the rationale and the full grammar.
+irules = ignore_rules(root_abs);
+ignored = {};
+if ~isempty(irules)
+    keep = false(1, numel(rels));
+    for i = 1:numel(rels)
+        if is_ignored(rels{i}, irules)
+            ignored{end + 1} = rels{i}; %#ok<AGROW>
+        else
+            keep(i) = true;
+        end
+    end
+    rels = rels(keep);
+    files = files(keep);
+end
+
 reserved_names = {'index.md', 'log.md'};
 concepts = struct('path', {}, 'reserved', {}, 'type', {}, 'title', {}, ...
                   'description', {}, 'resource', {}, 'tags', {}, 'timestamp', {}, ...
@@ -77,6 +95,10 @@ for i = 1:numel(all_paths)
     rel = all_paths{i}(numel(root_abs) + 2:end);
     b.files{i} = strrep(rel, '\', '/');
 end
+% Bundle-relative .md paths excluded by .okfignore. Reported so an over-broad
+% pattern cannot quietly shrink a bundle: an ignored file produces no findings
+% at all, which is indistinguishable from a clean one unless something counts it.
+b.ignored = ignored;
 b.okf_version = '';
 for i = 1:numel(concepts)
     if strcmp(concepts(i).path, 'index.md')
@@ -107,6 +129,147 @@ for i = 1:numel(entries)
         if numel(name) > 3 && strcmp(name(end - 2:end), '.md')
             files{end + 1} = full; %#ok<AGROW>
         end
+    end
+end
+end
+
+function rules = ignore_rules(root)
+%IGNORE_RULES Parse a bundle's .okfignore into match rules.
+%   Empty when the file is absent, which is what makes this a pure addition:
+%   a bundle without one reads exactly as it did before.
+rules = struct('rx', {}, 'neg', {}, 'dir_only', {}, 'anchored', {});
+f = fullfile(root, '.okfignore');
+if exist(f, 'file') ~= 2
+    return;
+end
+fid = fopen(f, 'rb');
+bytes = fread(fid, Inf, '*uint8')';
+fclose(fid);
+txt = native2unicode(bytes, 'UTF-8');
+txt = strrep(txt, char(13), '');
+lines = strsplit(txt, char(10));
+for i = 1:numel(lines)
+    p = strtrim(lines{i});
+    if isempty(p) || p(1) == '#'
+        continue;
+    end
+    neg = p(1) == '!';
+    if neg
+        p = strtrim(p(2:end));
+    end
+    if isempty(p)
+        continue;
+    end
+    dir_only = p(end) == '/';
+    if dir_only
+        p = p(1:end - 1);
+    end
+    if isempty(p)
+        continue;
+    end
+    r = struct('rx', glob_rx(p), 'neg', neg, 'dir_only', dir_only, ...
+               'anchored', any(p == '/'));
+    rules(end + 1) = r; %#ok<AGROW>
+end
+end
+
+function rx = glob_rx(g)
+%GLOB_RX Translate one .okfignore pattern into a fully anchored regex.
+%   A deliberately small, completely specified subset of gitignore: five
+%   independent implementations have to agree on it exactly, and gitignore's
+%   per-directory cascade and its negation corners are where independent
+%   implementations drift. One .okfignore, at the bundle root, no cascade.
+%
+%   Characters in META are escaped to stay literal in every binding's regex
+%   engine; everything else -- '/', '-', '_', alphanumerics, any non-ASCII --
+%   passes through UNESCAPED, because Rust's regex crate rejects an
+%   unrecognized escape where PCRE and std::regex accept it.
+META = ['.' char(92) '+*?()[]{}^$|'];
+parts = {};
+i = 1;
+n = numel(g);
+while i <= n
+    ch = g(i);
+    if ch == '*' && i < n && g(i + 1) == '*'
+        % `/**/` matches a single `/` as well as any run of directories, so
+        % `a/**/b` matches `a/b`. Without this the pattern everyone writes
+        % first silently matches nothing at the one depth they meant.
+        if i > 1 && g(i - 1) == '/' && i + 2 <= n && g(i + 2) == '/'
+            parts{end} = '(?:/.*)?/';
+            i = i + 3;
+        else
+            parts{end + 1} = '.*'; %#ok<AGROW>
+            i = i + 2;
+        end
+    elseif ch == '*'
+        parts{end + 1} = '[^/]*'; %#ok<AGROW>
+        i = i + 1;
+    elseif ch == '?'
+        parts{end + 1} = '[^/]'; %#ok<AGROW>
+        i = i + 1;
+    else
+        if any(META == ch)
+            parts{end + 1} = [char(92) ch]; %#ok<AGROW>
+        else
+            parts{end + 1} = ch; %#ok<AGROW>
+        end
+        i = i + 1;
+    end
+end
+rx = ['^' strjoin(parts, '') '$'];
+end
+
+function tf = is_ignored(path, rules)
+%IS_IGNORED True when `path` (bundle-relative, forward slashes) is ignored.
+%   The LAST matching rule decides, so a `!` line can re-include a file an
+%   earlier pattern swept up.
+tf = false;
+if isempty(rules)
+    return;
+end
+slash = find(path == '/', 1, 'last');
+if isempty(slash)
+    base = path;
+else
+    base = path(slash + 1:end);
+end
+% SPEC 3.1 reserves these two. A bundle that could ignore its own index would
+% lose its okf_version and its directory listing, so they are never ignorable:
+% an ignore file cannot un-structure the bundle.
+if any(strcmp(base, {'index.md', 'log.md'}))
+    return;
+end
+comps = strsplit(path, '/');
+dirs = comps(1:end - 1);
+pref = cell(1, numel(dirs));
+for k = 1:numel(dirs)
+    pref{k} = strjoin(dirs(1:k), '/');
+end
+for i = 1:numel(rules)
+    r = rules(i);
+    hit = false;
+    if r.dir_only
+        if r.anchored
+            subj = pref;
+        else
+            subj = dirs;
+        end
+        for k = 1:numel(subj)
+            if ~isempty(regexp(subj{k}, r.rx, 'once'))
+                hit = true;
+                break;
+            end
+        end
+    else
+        if r.anchored
+            s = path;
+        else
+            s = base;
+        end
+        hit = ~isempty(regexp(s, r.rx, 'once'));
+    end
+    if hit
+        tf = ~r.neg;
     end
 end
 end

@@ -1,4 +1,13 @@
 # Normalize line endings to LF in the repo (cross-platform consistency).
 * text=auto eol=lf
+
+# The okfignore fixture carries ONE CRLF-terminated pattern among LF ones, on
+# purpose: 13 of the 15 estate bundles that now ship a .okfignore sit in repos
+# that check dotfiles out as CRLF, and a binding that fails to strip the CR
+# turns every pattern on such a line into one that matches nothing -- silently,
+# because an ignore that does not fire just looks like errors coming back.
+# eol=lf above would normalise that away and delete the test.
+conformance/bundles/okfignore/.okfignore -text
+
 *.png binary
 *.duckdb binary

@@ -29,6 +29,7 @@ package that implements the semantics should demonstrate them.
 - [The five bindings](bindings.md) — thin, native, mirrored; two full, three core
 - [Sources](sources.md) — dir, git, tar/zip
 - [Validate](validate.md) — the conformance lint
+- [.okfignore](ignore.md) — declaring which files were never concepts
 - [The concept graph](links.md) — links, backlinks, impact
 - [Query](query.md) — SQL and helpers over the catalog
 - [Context](context.md) — the index-first LLM-wiki primitive

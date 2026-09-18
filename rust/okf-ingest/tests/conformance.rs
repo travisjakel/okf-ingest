@@ -539,6 +539,108 @@ fn conformance() {
     let d0 = diff(DiffSide::Ingested(&ingd), DiffSide::Dir(&da)).unwrap();
     c.check("diff.drift_identical", d0.identical, true);
 
+    // --- okfignore: `.okfignore` excludes files from the CONCEPT set, not from
+    // the tree. Every path in `ignored` carries no frontmatter at all, so
+    // `errors == 0` is only reachable if each rule of the grammar matched.
+    let ingi = ingest(here.join("bundles/okfignore").to_str().unwrap()).unwrap();
+    let expi = load("expected/okfignore.json");
+    let strs = |v: &serde_json::Value, k: &str| -> Vec<String> {
+        v[k].as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap().to_string())
+            .collect()
+    };
+    c.check(
+        "ign.n_files",
+        ingi.summary.n_files as u64,
+        expi["bundle"]["n_files"].as_u64().unwrap(),
+    );
+    c.check(
+        "ign.n_concepts",
+        ingi.summary.n_concepts as u64,
+        expi["bundle"]["n_concepts"].as_u64().unwrap(),
+    );
+    c.check(
+        "ign.conformant",
+        ingi.summary.conformant,
+        expi["bundle"]["conformant"].as_bool().unwrap(),
+    );
+    c.check(
+        "ign.errors",
+        ingi.summary.errors as u64,
+        expi["bundle"]["errors"].as_u64().unwrap(),
+    );
+    c.check(
+        "ign.links_total",
+        ingi.summary.links_total as u64,
+        expi["bundle"]["links_total"].as_u64().unwrap(),
+    );
+    c.check(
+        "ign.links_broken",
+        ingi.summary.links_broken as u64,
+        expi["bundle"]["links_broken"].as_u64().unwrap(),
+    );
+    c.check("ign.ignored", ingi.bundle.ignored.clone(), strs(&expi, "ignored"));
+    let mut got_c: Vec<String> = ingi
+        .bundle
+        .concepts
+        .iter()
+        .filter(|x| !x.reserved)
+        .map(|x| x.path.clone())
+        .collect();
+    got_c.sort();
+    c.check("ign.concepts", got_c, strs(&expi, "concepts"));
+    let mut got_r: Vec<String> = ingi
+        .bundle
+        .concepts
+        .iter()
+        .filter(|x| x.reserved)
+        .map(|x| x.path.clone())
+        .collect();
+    got_r.sort();
+    c.check(
+        "ign.reserved_still_read",
+        got_r,
+        strs(&expi, "reserved_still_read"),
+    );
+    // An ignored file stays an ordinary file in the tree, so a reference to it
+    // resolves (as a non-concept) instead of breaking.
+    c.check(
+        "ign.files_contains",
+        ingi.bundle
+            .files
+            .contains(expi["files_contains"].as_str().unwrap()),
+        true,
+    );
+    c.check(
+        "ign.files_excludes",
+        ingi.bundle
+            .files
+            .contains(expi["files_excludes"].as_str().unwrap()),
+        false,
+    );
+    let mut infos: Vec<String> = ingi
+        .findings
+        .iter()
+        .filter(|f| f.severity == Severity::Info)
+        .map(|f| format!("{}|{}", f.path, f.rule))
+        .collect();
+    infos.sort();
+    let want_infos: Vec<String> = expi["info_rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| {
+            format!(
+                "{}|{}",
+                v["path"].as_str().unwrap(),
+                v["rule"].as_str().unwrap()
+            )
+        })
+        .collect();
+    c.check("ign.info_rules", infos, want_infos);
+
     assert!(c.fails.is_empty(), "FAIL\n  {}", c.fails.join("\n  "));
     println!("PASS — Rust binding conformant on all fixtures");
 }

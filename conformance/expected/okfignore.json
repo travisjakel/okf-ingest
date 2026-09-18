@@ -1,0 +1,43 @@
+{
+  "bundle": {
+    "n_files": 7,
+    "n_concepts": 5,
+    "n_conformant": 5,
+    "conformant": true,
+    "errors": 0,
+    "links_total": 6,
+    "links_broken": 0
+  },
+  "_note": "The `.okfignore` convention. SPEC 3.1 reserves exactly two filenames and then says 'All other .md files are concept documents', so a bundle has no way to declare that its README, its schema.md or a vendored deployment doc was never a concept -- every one of them fails the hard `type:` rule, and a conformant bundle is unreachable for any repository that is also a repository. The alternative 'fix' is to put `type: Doc` on a README, which is a lie told to a validator. Each of the seven files in `ignored` carries NO frontmatter at all, so each would be a conformance ERROR if the rule covering it failed to match: `errors: 0` is what makes this fixture discriminating rather than merely consistent. An ignored file leaves the CONCEPT set and stays in the FILE set -- `files_contains` asserts README.md is still there and index.md's link to it is an `info` (non_concept_target, SPEC 6.2/6.3), NOT a broken link. `files_excludes` asserts the ignore file itself is never a bundle member; all five readers already skip dotfiles, so it is read explicitly by path.",
+  "ignored": [
+    "README.md",
+    "a/_scratch/note.md",
+    "b.draft.md",
+    "docs/README.md",
+    "notes/tmp.md",
+    "notes/x/y/tmp.md",
+    "pkg/vendor/dep.md"
+  ],
+  "_ignored_note": "Sorted in BYTE order, not locale collation -- 'README.md' leads because 'R' is 0x52. One discriminating case per rule of the grammar: README.md a bare name at the root, docs/README.md the same name at depth (a bare name matches the BASENAME anywhere), a/_scratch/note.md a non-anchored directory pattern matching below the root, pkg/vendor/dep.md an anchored directory pattern, b.draft.md a `*` that must stop at a `/`, notes/tmp.md `/**/` spanning ZERO directories, notes/x/y/tmp.md the same pattern spanning two. The `notes/**/tmp.md` line is terminated CRLF while every other line is LF, and .gitattributes marks this file -text so that survives: 13 of the 15 estate bundles shipping a .okfignore live in repos that check dotfiles out as CRLF, and a binding that left the CR on the pattern would turn the rule silently inert. It is load-bearing -- deleting that one line takes errors 0 -> 2 and ignored 7 -> 5.",
+  "concepts": [
+    "concept.md",
+    "docs/real.md",
+    "notes/x/keep.md",
+    "other/vendor/live.md",
+    "pkg/vendor/keep.md"
+  ],
+  "_concepts_note": "Non-reserved concepts that survived. Three of these are negative controls for the grammar and are the reason the fixture cannot pass by ignoring everything: `pkg/vendor/keep.md` was swept up by `pkg/vendor/` and re-included by the later `!pkg/vendor/keep.md` (LAST match wins); `other/vendor/live.md` proves `pkg/vendor/` is ANCHORED at the bundle root rather than matching a `vendor` directory anywhere; `notes/x/keep.md` sits inside a directory the `notes/**/tmp.md` pattern traverses and is untouched because the pattern names a file.",
+  "reserved_still_read": [
+    "index.md",
+    "log.md"
+  ],
+  "_reserved_note": "`.okfignore` lists `log.md`, and that line does nothing. SPEC 3.1 reserves both filenames; a bundle able to ignore its own index would lose its `okf_version` and its directory listing, so an ignore file cannot un-structure the bundle. Both are still read, which is why n_files is 7 and not 6.",
+  "files_contains": "README.md",
+  "files_excludes": ".okfignore",
+  "info_rules": [
+    {
+      "path": "index.md",
+      "rule": "non_concept_target"
+    }
+  ]
+}

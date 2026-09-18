@@ -91,10 +91,19 @@ if (cmd == "validate") {
   conf <- nerr == 0
   if (out_json) {
     emit(list(bundle = pos, conformant = conf, errors = nerr, warnings = nwarn,
+              ignored = as.list(rd$ignored),
               findings = if (nrow(val)) val else list()))
   } else {
     cat(sprintf("bundle: %s\nconformant: %s  (errors: %d, warnings: %d)\n",
                 pos, conf, nerr, nwarn))
+    # An ignored file produces no findings at all, which is indistinguishable
+    # from a clean one -- so say how many there are. Otherwise an over-broad
+    # `.okfignore` reads as a bundle that got healthier, not one that got
+    # smaller.
+    if (length(rd$ignored))
+      cat(sprintf("ignored: %d file(s) via .okfignore (%s%s)\n",
+                  length(rd$ignored), paste(head(rd$ignored, 3), collapse = ", "),
+                  if (length(rd$ignored) > 3) ", ..." else ""))
     if (nrow(val)) for (i in seq_len(nrow(val)))
       cat(sprintf("  [%-5s] %-22s %s — %s\n", val$severity[i], val$rule[i], val$path[i], val$message[i]))
   }

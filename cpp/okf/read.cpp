@@ -60,6 +60,24 @@ Bundle read_bundle(const std::string& root, const std::string& source_kind) {
     }
     b.root = root_str;
     b.source_kind = source_kind;
+    // `.okfignore` drops files from the CONCEPT set only; they stay in
+    // b.files, so a reference to one still resolves -- as a non-concept file.
+    std::vector<IgnoreRule> irules = ignore_rules(root_str);
+    if (!irules.empty()) {
+        std::vector<fs::path> keep;
+        keep.reserve(files.size());
+        for (const fs::path& f : files) {
+            std::string rel = slashify(fs::relative(f, root_path));
+            if (is_ignored(rel, irules)) {
+                b.ignored.push_back(rel);
+            } else {
+                keep.push_back(f);
+            }
+        }
+        files = std::move(keep);
+        std::sort(b.ignored.begin(), b.ignored.end());
+    }
+
     b.concepts.reserve(files.size());
     for (const fs::path& f : files) {
         std::string rel = slashify(fs::relative(f, root_path));

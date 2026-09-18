@@ -64,6 +64,12 @@ pub struct Bundle {
     /// and SPEC 6.3 `references/` point at non-markdown artifacts (an attester
     /// .py, a computation .sql). Those are real targets, not broken links.
     pub files: BTreeSet<String>,
+    /// Bundle-relative `.md` paths excluded by `.okfignore` (see
+    /// `ignore::IGNORE_FILE`). Reported so an over-broad pattern cannot
+    /// quietly shrink a bundle: an ignored file produces no findings at
+    /// all, which is indistinguishable from a clean one unless something
+    /// counts it.
+    pub ignored: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

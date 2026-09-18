@@ -1,5 +1,6 @@
 """okf — Open Knowledge Format ingestion (Python binding)."""
-from .okf import read_bundle, validate, links, ingest, search, fetch, context, Bundle, Concept
+from .okf import (read_bundle, validate, links, ingest, search, fetch, context,
+                  ignored, Bundle, Concept)
 # Note: import the function as `rag_search` so it does not shadow the `okf.rag`
 # submodule (i.e. `import okf.rag` keeps returning the module, not this fn).
 from .rag import chunk_body, ollama_embedder, embed
@@ -14,6 +15,7 @@ from .trust import (trust, sources, computations, bind, canonicalize,
                     footnote_labels, instant)
 
 __all__ = ["read_bundle", "validate", "links", "ingest", "search", "fetch", "context",
+           "ignored",
            "Bundle", "Concept", "chunk_body", "ollama_embedder", "embed", "rag_search",
            "render_html", "backlinks", "impact", "clusters", "graph_json", "graph_html",
            "graph_mermaid", "ppr", "seeds", "doctor", "doctor_fix", "diff", "bundle_state",

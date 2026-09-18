@@ -217,5 +217,30 @@ for (key in names(exf$must_extract)) {
 }
 DBI::dbDisconnect(rf$con, shutdown = TRUE)
 
+# okfignore: `.okfignore` excludes files from the CONCEPT set, not from the tree.
+# Every path in `ignored` carries no frontmatter at all, so `errors == 0` is only
+# reachable if each rule of the grammar actually matched.
+ri  <- okf_ingest(file.path(here, "bundles", "okfignore"))
+exi <- jsonlite::fromJSON(file.path(here, "expected", "okfignore.json"))
+for (k in names(exi$bundle))
+  chk(paste0("ign.", k), ri$summary[[k]], exi$bundle[[k]])
+rdi <- okf_read(file.path(here, "bundles", "okfignore"))
+chk("ign.ignored", rdi$ignored, exi$ignored)
+chk("ign.okf_ignored", okf_ignored(file.path(here, "bundles", "okfignore")), exi$ignored)
+chk("ign.concepts", DBI::dbGetQuery(ri$con,
+  "SELECT path FROM okf_concept WHERE reserved = FALSE ORDER BY path")$path, exi$concepts)
+chk("ign.reserved_still_read", DBI::dbGetQuery(ri$con,
+  "SELECT path FROM okf_concept WHERE reserved = TRUE ORDER BY path")$path,
+  exi$reserved_still_read)
+# An ignored file stays an ordinary file in the tree, so a reference to it
+# resolves (as a non-concept) instead of breaking.
+chk("ign.files_contains", exi$files_contains %in% rdi$files, TRUE)
+chk("ign.files_excludes", exi$files_excludes %in% rdi$files, FALSE)
+vi <- DBI::dbGetQuery(ri$con,
+  "SELECT path, rule FROM okf_validation WHERE severity='info' ORDER BY path, rule")
+chk("ign.info_rules.path", vi$path, exi$info_rules$path)
+chk("ign.info_rules.rule", vi$rule, exi$info_rules$rule)
+DBI::dbDisconnect(ri$con, shutdown = TRUE)
+
 if (length(fails)) { cat("FAIL\n  ", paste(fails, collapse = "\n  "), "\n"); quit(status = 1) }
 cat("PASS — R binding conformant on all fixtures\n")

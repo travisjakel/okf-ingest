@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf, MAIN_SEPARATOR as MAIN_SEP};
 
+use crate::ignore;
 use crate::links::{extract_links, extract_wikilinks};
 use crate::model::{Bundle, Concept, OkfError, SourceKind, RESERVED};
 use crate::parse::{content_hash, meta_get, parse_text, scalar_str, yaml_to_json};
@@ -47,7 +48,7 @@ pub fn read_bundle(
 ) -> Result<Bundle, OkfError> {
     let root_str = canon_str(root)?;
     let root_path = PathBuf::from(&root_str);
-    let mut files = Vec::new();
+    let mut files: Vec<PathBuf> = Vec::new();
     let mut all_paths = Vec::new();
     walk_md(&root_path, &mut files, &mut all_paths)?;
     let mut all_files: BTreeSet<String> = BTreeSet::new();
@@ -55,6 +56,30 @@ pub fn read_bundle(
         if let Ok(r) = f.strip_prefix(&root_path) {
             all_files.insert(r.to_string_lossy().replace(MAIN_SEP, "/"));
         }
+    }
+
+    // `.okfignore` drops files from the CONCEPT set only; they stay in
+    // `all_files`, so a reference to one still resolves — as a non-concept file.
+    let irules = ignore::rules(&root_path);
+    let mut ignored: Vec<String> = Vec::new();
+    if !irules.is_empty() {
+        let mut keep = Vec::with_capacity(files.len());
+        for f in files {
+            let rel = match f.strip_prefix(&root_path) {
+                Ok(r) => r.to_string_lossy().replace(MAIN_SEP, "/"),
+                Err(_) => {
+                    keep.push(f);
+                    continue;
+                }
+            };
+            if ignore::is_ignored(&rel, &irules) {
+                ignored.push(rel);
+            } else {
+                keep.push(f);
+            }
+        }
+        files = keep;
+        ignored.sort();
     }
 
     let mut concepts: Vec<Concept> = Vec::with_capacity(files.len());
@@ -130,6 +155,7 @@ pub fn read_bundle(
         concepts,
         known,
         files: all_files,
+        ignored,
     })
 }
 

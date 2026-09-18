@@ -357,6 +357,47 @@ if ~isempty(fails)
     end
     error('okf:conformance', '%d conformance check(s) failed', numel(fails));
 end
+% --- okfignore: .okfignore excludes files from the CONCEPT set, not from the
+% tree. Every path in `ignored` carries no frontmatter at all, so errors == 0
+% is only reachable if each rule of the grammar actually matched. ------------
+ingi = okf.ingest(fullfile(here, 'bundles', 'okfignore'));
+expi = jsondecode(fileread(fullfile(here, 'expected', 'okfignore.json')));
+chk('ign.n_files', ingi.summary.n_files, expi.bundle.n_files);
+chk('ign.n_concepts', ingi.summary.n_concepts, expi.bundle.n_concepts);
+chk('ign.conformant', ingi.summary.conformant, expi.bundle.conformant);
+chk('ign.errors', ingi.summary.errors, expi.bundle.errors);
+chk('ign.links_total', ingi.summary.links_total, expi.bundle.links_total);
+chk('ign.links_broken', ingi.summary.links_broken, expi.bundle.links_broken);
+chk('ign.ignored', ingi.bundle.ignored, cellstr(expi.ignored)');
+got_ic = {};
+got_ir = {};
+for i = 1:numel(ingi.bundle.concepts)
+    if ingi.bundle.concepts(i).reserved
+        got_ir{end + 1} = ingi.bundle.concepts(i).path; %#ok<AGROW>
+    else
+        got_ic{end + 1} = ingi.bundle.concepts(i).path; %#ok<AGROW>
+    end
+end
+chk('ign.concepts', sort(got_ic), cellstr(expi.concepts)');
+chk('ign.reserved_still_read', sort(got_ir), cellstr(expi.reserved_still_read)');
+% An ignored file stays an ordinary file in the tree, so a reference to it
+% resolves (as a non-concept) instead of breaking.
+chk('ign.files_contains', any(strcmp(ingi.bundle.files, expi.files_contains)), true);
+chk('ign.files_excludes', any(strcmp(ingi.bundle.files, expi.files_excludes)), false);
+got_ii = {};
+for i = 1:numel(ingi.findings)
+    if strcmp(ingi.findings(i).severity, 'info')
+        got_ii{end + 1} = sprintf('%s|%s', ingi.findings(i).path, ...
+                                  ingi.findings(i).rule); %#ok<AGROW>
+    end
+end
+want_ii = {};
+for i = 1:numel(expi.info_rules)
+    want_ii{end + 1} = sprintf('%s|%s', expi.info_rules(i).path, ...
+                               expi.info_rules(i).rule); %#ok<AGROW>
+end
+chk('ign.info_rules', sort(got_ii), want_ii);
+
 fprintf('PASS -- MATLAB binding conformant on all fixtures\n');
 end
 

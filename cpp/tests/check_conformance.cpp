@@ -383,6 +383,59 @@ int main(int argc, char** argv) {
         // expected: not a dir, tar listing fails
     }
 
+    // --- okfignore: `.okfignore` excludes files from the CONCEPT set, not from
+    // the tree. Every path in `ignored` carries no frontmatter at all, so
+    // `errors == 0` is only reachable if each rule of the grammar matched.
+    okf::Ingested ingi = okf::ingest((here / "bundles/okfignore").string());
+    json expi = load(here / "expected/okfignore.json");
+    auto strs = [](const json& a) {
+        std::vector<std::string> v;
+        for (const json& x : a) v.push_back(x.get<std::string>());
+        return v;
+    };
+    check<std::size_t>("ign.n_files", ingi.summary.n_files,
+                       expi["bundle"]["n_files"].get<std::size_t>());
+    check<std::size_t>("ign.n_concepts", ingi.summary.n_concepts,
+                       expi["bundle"]["n_concepts"].get<std::size_t>());
+    check<bool>("ign.conformant", ingi.summary.conformant,
+                expi["bundle"]["conformant"].get<bool>());
+    check<std::size_t>("ign.errors", ingi.summary.errors,
+                       expi["bundle"]["errors"].get<std::size_t>());
+    check<std::size_t>("ign.links_total", ingi.summary.links_total,
+                       expi["bundle"]["links_total"].get<std::size_t>());
+    check<std::size_t>("ign.links_broken", ingi.summary.links_broken,
+                       expi["bundle"]["links_broken"].get<std::size_t>());
+    check<std::vector<std::string>>("ign.ignored", ingi.bundle.ignored,
+                                    strs(expi["ignored"]));
+    {
+        std::vector<std::string> got_c, got_r;
+        for (const okf::Concept& cc : ingi.bundle.concepts) {
+            (cc.reserved ? got_r : got_c).push_back(cc.path);
+        }
+        std::sort(got_c.begin(), got_c.end());
+        std::sort(got_r.begin(), got_r.end());
+        check<std::vector<std::string>>("ign.concepts", got_c, strs(expi["concepts"]));
+        check<std::vector<std::string>>("ign.reserved_still_read", got_r,
+                                        strs(expi["reserved_still_read"]));
+    }
+    // An ignored file stays an ordinary file in the tree, so a reference to it
+    // resolves (as a non-concept) instead of breaking.
+    check<bool>("ign.files_contains",
+                ingi.bundle.files.count(expi["files_contains"].get<std::string>()) > 0, true);
+    check<bool>("ign.files_excludes",
+                ingi.bundle.files.count(expi["files_excludes"].get<std::string>()) > 0, false);
+    {
+        std::vector<std::string> infos, want;
+        for (const okf::Finding& f : ingi.findings) {
+            if (f.severity == "info") infos.push_back(f.path + "|" + f.rule);
+        }
+        std::sort(infos.begin(), infos.end());
+        for (const json& v : expi["info_rules"]) {
+            want.push_back(v["path"].get<std::string>() + "|" + v["rule"].get<std::string>());
+        }
+        check<std::vector<std::string>>("ign.info_rules", infos, want);
+    }
+
     if (!fails.empty()) {
         std::cout << "FAIL\n";
         for (const std::string& f : fails) std::cout << "  " << f << "\n";

@@ -26,6 +26,7 @@
 mod diff;
 mod fetch;
 mod graph;
+mod ignore;
 mod ingest;
 mod links;
 mod model;
@@ -36,6 +37,7 @@ mod validate;
 pub use diff::{diff, Diff, DiffSide, DiffSummary, EdgeDelta, FieldChange};
 pub use fetch::{fetch, Fetched};
 pub use graph::{ppr, round_dec, seeds, PprOptions, RankRow, Seed, OKF_STOPWORDS};
+pub use ignore::{is_ignored, IGNORE_FILE};
 pub use ingest::{ingest, ingest_bundle};
 pub use links::{extract_links, extract_wikilinks, links, resolve_link, resolve_wiki, wiki_index};
 pub use model::{
