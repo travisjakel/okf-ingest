@@ -581,7 +581,11 @@ fn conformance() {
         ingi.summary.links_broken as u64,
         expi["bundle"]["links_broken"].as_u64().unwrap(),
     );
-    c.check("ign.ignored", ingi.bundle.ignored.clone(), strs(&expi, "ignored"));
+    c.check(
+        "ign.ignored",
+        ingi.bundle.ignored.clone(),
+        strs(&expi, "ignored"),
+    );
     let mut got_c: Vec<String> = ingi
         .bundle
         .concepts

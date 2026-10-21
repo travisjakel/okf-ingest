@@ -110,7 +110,12 @@ pub fn rules(root: &Path) -> Vec<Rule> {
             continue;
         }
         if let Ok(rx) = Regex::new(&glob_rx(p)) {
-            out.push(Rule { rx, neg, dir_only, anchored: p.contains('/') });
+            out.push(Rule {
+                rx,
+                neg,
+                dir_only,
+                anchored: p.contains('/'),
+            });
         }
     }
     out
