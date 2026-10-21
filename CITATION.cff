@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use okf-ingest in your work, please cite it as below."
+type: software
+title: "okf-ingest: deterministic ingestion tooling for Open Knowledge Format (OKF) bundles"
+abstract: >-
+  Reads, validates and loads Open Knowledge Format (OKF) bundles into a
+  portable DuckDB catalog, builds the concept graph, and derives the OKF v0.2
+  trust, lifecycle and attested-computation semantics. R and Python carry the
+  full surface; Rust, C++ and MATLAB implement the core, held byte-identical
+  across all five by a shared conformance corpus.
+authors:
+  - family-names: Jakel
+    given-names: Travis S.
+version: 0.13.1
+license: Apache-2.0
+repository-code: "https://github.com/travisjakel/okf-ingest"
+url: "https://travisjakel.github.io/okf-blog/"
+keywords:
+  - open-knowledge-format
+  - okf
+  - knowledge-graph
+  - duckdb
+  - r
+  - python
+references:
+  - type: standard
+    title: "Open Knowledge Format (OKF) specification"
+    version: "0.2"
+    authors:
+      - name: Google Cloud
+    url: "https://github.com/GoogleCloudPlatform/open-knowledge-format"

@@ -242,5 +242,23 @@ chk("ign.info_rules.path", vi$path, exi$info_rules$path)
 chk("ign.info_rules.rule", vi$rule, exi$info_rules$rule)
 DBI::dbDisconnect(ri$con, shutdown = TRUE)
 
+# --- v0.2 trust + doctor (R/Python surface only): date-only timestamps --------
+source(file.path(here, "..", "r", "okf", "R", "okf_doctor.R"))
+ext <- jsonlite::fromJSON(file.path(here, "expected", "v02_trust.json"), simplifyVector = FALSE)
+rdt <- okf_read(file.path(here, "bundles", ext$bundle))
+for (st in ext$stale) {
+  tt <- okf_trust(rdt, now = st$now)
+  chk(sprintf("trust.is_stale[%s@%s]", st$path, st$now), tt$is_stale[tt$path == st$path], st$is_stale)
+}
+rt <- okf_ingest(file.path(here, "bundles", ext$bundle))
+dd <- okf_doctor(rt$con, now = ext$doctor$now)
+chk("doctor.score", as.integer(dd$score), as.integer(ext$doctor$score))
+kv <- function(x) paste(sort(paste0(names(x), "=", unlist(x))), collapse = ", ")
+chk("doctor.rule_counts", kv(dd$by_rule), kv(ext$doctor$rule_counts))
+ni <- dd$issues[dd$issues$rule == "timestamp_not_instant", , drop = FALSE]
+chk("doctor.not_instant.path", ni$path, ext$doctor$not_instant$path)
+chk("doctor.not_instant.message", ni$message, ext$doctor$not_instant$message)
+DBI::dbDisconnect(rt$con, shutdown = TRUE)
+
 if (length(fails)) { cat("FAIL\n  ", paste(fails, collapse = "\n  "), "\n"); quit(status = 1) }
 cat("PASS — R binding conformant on all fixtures\n")

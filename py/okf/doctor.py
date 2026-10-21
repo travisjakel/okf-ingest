@@ -114,7 +114,8 @@ def doctor(con, now: Optional[str] = None, stale_days: Optional[int] = None) -> 
     # SPEC 11: consumers SHOULD derive trust tiers and staleness only from the
     # fields specified there. These rules are that derivation, and nothing here
     # guesses at a value the spec does not define.
-    from .trust import instant as _instant, family_misshaped as _misshaped
+    from .trust import (instant as _instant, family_misshaped as _misshaped,
+                        timestamps_not_instant as _not_instant)
 
     def _add(path, sev, rule, msg):
         issues.append({"path": path, "severity": sev, "rule": rule, "message": msg})
@@ -144,6 +145,16 @@ def doctor(con, now: Optional[str] = None, stale_days: Optional[int] = None) -> 
             if _misshaped(fm.get(key)):
                 _add(path, "info", "family_not_spec_shape",
                      f"{key} is present but not in the SPEC 5/10 shape; treated as absent")
+        # SPEC 5: every timestamp-valued key is an ISO-8601 datetime with an
+        # explicit offset (literal since upstream PR #6, 2026-08-21). A date-only
+        # value is read as midnight UTC; anything else has no instant at all, so
+        # a stale_after written that way can never fire stale_after_passed.
+        bad = _not_instant(fm)
+        if bad:
+            _add(path, "warn", "timestamp_not_instant",
+                 "not an ISO-8601 datetime with explicit offset (SPEC 5, upstream PR #6): "
+                 + ", ".join(f"{k}={v}" for k, v in bad)
+                 + "; a date reads as 00:00:00Z, anything else is ignored")
 
     # SPEC 5.5 staleness: an absolute instant, so this is a plain comparison.
     # It supersedes the age-heuristic `stale_timestamp` above, which guesses.

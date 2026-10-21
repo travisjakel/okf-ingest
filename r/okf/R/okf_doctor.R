@@ -136,6 +136,16 @@ okf_doctor <- function(con, now = NULL, stale_days = NULL) {
       val <- add(val, fmj$path[i], "info", "family_not_spec_shape",
                  sprintf("%s is present but not in the SPEC 5/10 shape; treated as absent", key))
     }
+    # SPEC 5: every timestamp-valued key is an ISO-8601 datetime with an
+    # explicit offset (literal since upstream PR #6, 2026-08-21). A date-only
+    # value is read as midnight UTC; anything else has no instant at all, so a
+    # stale_after written that way can never fire stale_after_passed.
+    bad <- .okf_timestamps_not_instant(fm)
+    if (length(bad))
+      val <- add(val, fmj$path[i], "warn", "timestamp_not_instant",
+                 paste0("not an ISO-8601 datetime with explicit offset (SPEC 5, upstream PR #6): ",
+                        paste0(names(bad), "=", bad, collapse = ", "),
+                        "; a date reads as 00:00:00Z, anything else is ignored"))
   }
 
   # SPEC 5.5 staleness: an absolute instant, so this is a plain comparison.

@@ -1,3 +1,28 @@
+# okf 0.13.1
+
+* **A date-only `stale_after` now goes stale.** Upstream PR #6 (2026-08-21)
+  made every timestamp-valued key an ISO-8601 datetime with an explicit
+  offset. Before that, `stale_after: 2027-01-01`, `sources[].last_modified`
+  and `usage_window.{from,to}` were written as bare dates, and v0.2 bundles
+  from that period still carry them. The strict instant parser returned `NA`
+  for such a value, so the concept was **silently never stale**: the
+  conformance fixture's `stale_after: 2027-01-01` still read as fresh at
+  2099, and `okf_doctor()` said nothing. A bare `YYYY-MM-DD` now reads as
+  midnight UTC that day. That is the earliest reading of the date, so a
+  concept goes stale no later than its writer meant. A local datetime with
+  no offset still has no instant and is still ignored.
+* New `okf_doctor()` rule **`timestamp_not_instant`** (warn). It names every
+  timestamp-valued key that is not an offset datetime: `stale_after`,
+  `verified[].at`, `sources[].last_modified`, `usage_window.from/to`
+  (top-level and per source), and `generated.at` when a legacy `timestamp`
+  sits beside it. A lone `generated.at` is already reported by
+  `okf_validate()` as `timestamp_not_iso8601`.
+* Locked for R and Python by the new `conformance/expected/v02_trust.json`.
+  Both conformance scripts now cover trust and doctor, which no fixture
+  exercised before; a mutation removing the date reading fails both.
+* No changes to the five-binding core. Rust, C++ and MATLAB are bumped only
+  to keep versions in lockstep.
+
 # okf 0.13.0
 
 * **`.okfignore` — a bundle can now say which `.md` files were never concepts.**

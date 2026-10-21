@@ -8,7 +8,7 @@ status: stable
 stale_after: 2027-09-17T00:00:00Z
 sources:
   - id: okf-spec-v02
-    resource: https://github.com/google/open-knowledge-format
+    resource: https://github.com/GoogleCloudPlatform/open-knowledge-format
     title: OKF v0.2, sections 5 and 6
   - id: trust-r
     resource: references/r-binding.md
@@ -59,8 +59,13 @@ where no producer exists manufactures provenance, which is worse than having
 none.
 
 `stale_after` is an absolute instant (SPEC 5.5), so staleness is a plain
-comparison with no reference to when the concept was read. A bare date does not
-qualify.
+comparison with no reference to when the concept was read. Since upstream PR #6
+(2026-08-21) every timestamp carries an explicit offset. A bare date (the
+pre-PR #6 form, still common in v0.2 bundles) reads as midnight UTC, so the
+concept goes stale no later than its writer meant. A local datetime with no
+offset has no instant and is ignored. Either form raises the doctor rule
+`timestamp_not_instant`, because a `stale_after` the consumer cannot read
+otherwise just looks like a concept that never goes stale.
 
 See [Attested Computations](computations.md) for the per-run half of the same
 idea, and [validate](validate.md) for the hard rules that sit under all of this.

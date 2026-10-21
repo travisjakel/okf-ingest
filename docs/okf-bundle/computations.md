@@ -7,7 +7,7 @@ generated: { by: hand, at: 2026-09-17T00:00:00Z }
 status: stable
 sources:
   - id: okf-spec-s10
-    resource: https://github.com/google/open-knowledge-format
+    resource: https://github.com/GoogleCloudPlatform/open-knowledge-format
     title: OKF v0.2, section 10
   - id: bind-r
     resource: references/r-binding.md

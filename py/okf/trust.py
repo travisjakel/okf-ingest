@@ -58,12 +58,25 @@ def _status(fm: dict) -> Optional[str]:
     return s if s in OKF_STATUS else None
 
 
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def instant(x) -> Optional[_dt.datetime]:
     """Parse an ISO-8601 instant with an explicit offset; None if it is not one.
 
     Deliberately strict: SPEC 5 says every timestamp-valued key carries an
     explicit UTC offset, and a bare local datetime has no defined instant.
+
+    One exception: a bare ``YYYY-MM-DD`` reads as midnight UTC that day. It was
+    the normative ``stale_after`` form until upstream PR #6 (2026-08-21) and
+    v0.2 bundles written before then still carry it. Reading it as "no
+    instant" made such a concept silently never stale -- the fixture's
+    ``stale_after: 2027-01-01`` was still fresh at 2099. Midnight UTC is the
+    earliest reading of the date, so the concept goes stale no later than its
+    writer meant. ``doctor`` reports the form as ``timestamp_not_instant``.
     """
+    if isinstance(x, str) and _DATE.match(x):
+        x = x + "T00:00:00Z"
     if not isinstance(x, str) or not x or not _ISO.match(x):
         return None
     y = x[:-1] + "+00:00" if x.endswith("Z") else x
@@ -73,6 +86,35 @@ def instant(x) -> Optional[_dt.datetime]:
         return _dt.datetime.fromisoformat(y)
     except ValueError:
         return None
+
+
+def timestamps_not_instant(fm) -> list:
+    """Every SPEC 5 timestamp-valued key that is not an offset datetime, as
+    ``(key, value)`` pairs. ``generated.at`` is checked only beside a legacy
+    ``timestamp``: alone it IS the concept timestamp, which ``validate()``
+    already reports as ``timestamp_not_iso8601``."""
+    if not isinstance(fm, dict):
+        return []
+    vals = [("stale_after", fm.get("stale_after"))]
+    gen = fm.get("generated")
+    if fm.get("timestamp") is not None and isinstance(gen, dict):
+        vals.append(("generated.at", gen.get("at")))
+    for i, v in enumerate(_maplist(fm.get("verified"))):
+        vals.append((f"verified[{i}].at", v.get("at")))
+    uw = fm.get("usage_window")
+    if isinstance(uw, dict):
+        vals += [("usage_window.from", uw.get("from")), ("usage_window.to", uw.get("to"))]
+    srcs = fm.get("sources")
+    for i, s in enumerate(srcs if isinstance(srcs, list) else []):
+        if not isinstance(s, dict):
+            continue
+        vals.append((f"sources[{i}].last_modified", s.get("last_modified")))
+        suw = s.get("usage_window")
+        if isinstance(suw, dict):
+            vals += [(f"sources[{i}].usage_window.from", suw.get("from")),
+                     (f"sources[{i}].usage_window.to", suw.get("to"))]
+    return [(k, v) for k, v in vals
+            if v is not None and not (isinstance(v, str) and _ISO.match(v))]
 
 
 def _latest(ats: list) -> Optional[str]:

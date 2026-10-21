@@ -43,9 +43,23 @@ producers can improve, but ingestion always proceeds:
   fixture).
 - **`sources`**, **`verified`**, **`usage_window`**, **`status`**,
   **`stale_after`**: parsed and preserved verbatim in `frontmatter`
-  (JSON-shaped), queryable via the catalog's `frontmatter` column. No trust
-  tiers or staleness findings are derived yet (candidate for a future
-  release); nothing about them affects conformance.
+  (JSON-shaped), queryable via the catalog's `frontmatter` column. Since
+  0.12.0 the R and Python bindings also DERIVE from them (SPEC 11):
+  `okf_trust()` / `okf.trust()` give the SPEC 5.3 trust tier and SPEC 5.5
+  staleness, and `okf_doctor()` reports `stale_after_passed`,
+  `status_not_spec_vocabulary` and `family_not_spec_shape`. None of this
+  affects conformance.
+- **Timestamp form** (SPEC 5; literal since upstream PR #6, 2026-08-21):
+  every timestamp-valued key is an ISO-8601 datetime with an explicit offset.
+  Two older forms still appear in v0.2 bundles, and they are handled
+  differently:
+  - A bare `YYYY-MM-DD` was the normative `stale_after` form before PR #6. It
+    reads as midnight UTC (since 0.13.1), which is the earliest reading of
+    the date, so the concept goes stale no later than its writer meant.
+  - A local datetime with no offset has no defined instant and is ignored.
+
+  Either form raises the doctor rule `timestamp_not_instant` (warn), which
+  names each key.
 - **Legacy `# Citations` body lists**: not parsed (the spec makes reading them
   a MAY; `sources` is the v0.2 form).
 - **Actor convention** (`producer/version`, `human:<id>`, `process:<id>`):
@@ -72,3 +86,16 @@ flagged `reserved = true`, and excluded from the `type`-required rule.
 
 `okf_version` is read from the **root** `index.md` frontmatter when present
 (`"0.1"`, `"0.2"`). An unknown version is loaded best-effort, not refused.
+
+## Upstream status (checked 2026-10-21)
+
+- The spec is still **v0.2**. PR #6 (2026-08-21) is the only normative change
+  since v0.2 was released, and it shipped without a version bump (upstream
+  issue #24).
+- Our path-resolution report, issue #29, is still open, as is PR #31.
+- Upstream has 23 open community proposals: typed relationships (#16, #30),
+  `supersedes`/`contested_by` (#22), a `refuted` trust value (#13), `imported`
+  attribution (#15), withheld sources (#32), deletion semantics (#11) and a
+  JSON Schema (#8). None has a maintainer response, so none is implemented
+  here. Experiments belong on the `prototype/okf-extensions` branch as unknown
+  keys, which the spec already requires consumers to preserve.

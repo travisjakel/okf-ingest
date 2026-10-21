@@ -1,0 +1,19 @@
+{
+  "_note": "R/Python surface only: trust and doctor are not part of the five-port core. A date-only stale_after was the normative form until upstream PR #6 (2026-08-21) and v0.2 bundles written before then still carry it. It reads as midnight UTC so the concept can go stale (before 0.13.1 it was silently never stale), and doctor names every timestamp-valued key that is not an offset datetime.",
+  "bundle": "v02",
+  "stale": [
+    { "now": "2026-10-21T00:00:00Z", "path": "widget.md", "is_stale": false },
+    { "now": "2026-12-31T23:59:59Z", "path": "widget.md", "is_stale": false },
+    { "now": "2027-01-01T00:00:00Z", "path": "widget.md", "is_stale": true },
+    { "now": "2099-01-01T00:00:00Z", "path": "widget.md", "is_stale": true }
+  ],
+  "doctor": {
+    "now": "2099-01-01T00:00:00Z",
+    "score": 50,
+    "rule_counts": { "source_id_uncited": 1, "stale_after_passed": 1, "timestamp_not_instant": 1 },
+    "not_instant": {
+      "path": "widget.md",
+      "message": "not an ISO-8601 datetime with explicit offset (SPEC 5, upstream PR #6): stale_after=2027-01-01, usage_window.from=2026-06-01, usage_window.to=2026-06-30, sources[0].last_modified=2026-05-30; a date reads as 00:00:00Z, anything else is ignored"
+    }
+  }
+}

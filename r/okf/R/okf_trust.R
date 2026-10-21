@@ -46,14 +46,55 @@ OKF_STATUS <- c("draft", "stable", "deprecated")
 # Parse an ISO-8601 instant with an explicit offset (NA when it is not one).
 # Deliberately strict: SPEC 5 says every timestamp-valued key carries an
 # explicit UTC offset, and a bare local datetime has no defined instant.
+#
+# One exception: a bare YYYY-MM-DD reads as midnight UTC that day. It was the
+# normative `stale_after` form until upstream PR #6 (2026-08-21) and v0.2
+# bundles written before then still carry it. Reading it as "no instant" made
+# such a concept silently never stale -- the fixture's `stale_after:
+# 2027-01-01` was still fresh at 2099. Midnight UTC is the earliest reading of
+# the date, so the concept goes stale no later than its writer meant.
+# `okf_doctor()` reports the form as `timestamp_not_instant`.
 .okf_instant <- function(x) {
   if (is.null(x) || length(x) != 1L) return(as.POSIXct(NA))
   if (is.na(x) || !nzchar(x)) return(as.POSIXct(NA))
+  if (grepl("^\\d{4}-\\d{2}-\\d{2}$", x)) x <- paste0(x, "T00:00:00Z")
   if (!.okf_is_iso8601(x)) return(as.POSIXct(NA))
   y <- sub("Z$", "+0000", x)
   y <- sub("([+-][0-9]{2}):([0-9]{2})$", "\\1\\2", y)
   tryCatch(as.POSIXct(y, format = "%Y-%m-%dT%H:%M:%OS%z", tz = "UTC"),
            error = function(e) as.POSIXct(NA))
+}
+
+# Every SPEC 5 timestamp-valued key that is not an offset datetime, as a named
+# character vector (key -> value). `generated.at` is checked only beside a
+# legacy `timestamp`: alone it IS the concept timestamp, which okf_validate()
+# already reports as `timestamp_not_iso8601`.
+.okf_timestamps_not_instant <- function(fm) {
+  if (!is.list(fm)) return(character())
+  vals <- list(stale_after = fm[["stale_after"]])
+  gen <- fm[["generated"]]
+  if (!is.null(fm[["timestamp"]]) && is.list(gen)) vals[["generated.at"]] <- gen[["at"]]
+  vs <- .okf_maplist(fm[["verified"]])
+  for (i in seq_along(vs)) vals[[sprintf("verified[%d].at", i - 1L)]] <- vs[[i]][["at"]]
+  uw <- fm[["usage_window"]]
+  if (is.list(uw)) {
+    vals[["usage_window.from"]] <- uw[["from"]]
+    vals[["usage_window.to"]] <- uw[["to"]]
+  }
+  srcs <- fm[["sources"]]
+  if (is.list(srcs) && is.null(names(srcs))) for (i in seq_along(srcs)) {
+    s <- srcs[[i]]
+    if (!is.list(s)) next
+    vals[[sprintf("sources[%d].last_modified", i - 1L)]] <- s[["last_modified"]]
+    suw <- s[["usage_window"]]
+    if (is.list(suw)) {
+      vals[[sprintf("sources[%d].usage_window.from", i - 1L)]] <- suw[["from"]]
+      vals[[sprintf("sources[%d].usage_window.to", i - 1L)]] <- suw[["to"]]
+    }
+  }
+  vals <- Filter(Negate(is.null), vals)
+  out <- vapply(vals, .s, "")
+  out[is.na(out) | !.okf_is_iso8601(out)]
 }
 
 # SPEC 5.2: "how recently" is the latest `at`. Compare parsed INSTANTS, not

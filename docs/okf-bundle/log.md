@@ -9,6 +9,15 @@ tags: [log]
 
 # Change log
 
+- **2026-10-21** 0.13.1 — a date-only `stale_after` now goes stale. Upstream
+  PR #6 (2026-08-21) made every timestamp an offset datetime, and the strict
+  parser read the older bare-date form as "no instant", so such a concept was
+  silently never stale (the fixture's `2027-01-01` was fresh at 2099). A bare
+  date now reads as midnight UTC, and the new doctor rule
+  `timestamp_not_instant` names every offending key. See
+  [trust & lifecycle](trust.md). Upstream checked the same day: the spec is
+  still v0.2, and PR #6 remains the only normative change since its release.
+
 - **2026-09-18** 0.13.0 — [`.okfignore`](ignore.md). SPEC 3.1 reserves two
   filenames and calls every other `.md` file a concept, so a bundle had no way
   to say that its README or its `schema.md` was scaffolding — each one failed

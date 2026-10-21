@@ -228,6 +228,24 @@ check("ign.info_rules", [{"path": r[0], "rule": r[1]} for r in coni.execute(
     "ORDER BY path, rule").fetchall()], expi["info_rules"])
 coni.close()
 
+# --- v0.2 trust + doctor (R/Python surface only): date-only timestamps -------
+from okf.trust import trust as _trust
+from okf.doctor import doctor as _doctor
+expt = json.load(open(os.path.join(HERE, "expected", "v02_trust.json")))
+bdt = okf.read_bundle(os.path.join(HERE, "bundles", expt["bundle"]))
+for st in expt["stale"]:
+    got = {r["path"]: r["is_stale"] for r in _trust(bdt, now=st["now"])}
+    check(f"trust.is_stale[{st['path']}@{st['now']}]", got.get(st["path"]), st["is_stale"])
+cont, _ = okf.ingest(os.path.join(HERE, "bundles", expt["bundle"]))
+dd = _doctor(cont, now=expt["doctor"]["now"])
+check("doctor.score", dd["score"], expt["doctor"]["score"])
+check("doctor.rule_counts", dd["by_rule"], expt["doctor"]["rule_counts"])
+ni = [i for i in dd["issues"] if i["rule"] == "timestamp_not_instant"]
+check("doctor.not_instant.path", [i["path"] for i in ni], [expt["doctor"]["not_instant"]["path"]])
+check("doctor.not_instant.message", [i["message"] for i in ni],
+      [expt["doctor"]["not_instant"]["message"]])
+cont.close()
+
 if fails:
     print("FAIL\n  " + "\n  ".join(fails)); sys.exit(1)
 print("PASS — Python binding conformant on all fixtures")
